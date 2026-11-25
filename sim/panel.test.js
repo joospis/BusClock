@@ -47,6 +47,21 @@ test("stops from the real response", () => {
   assert.ok(!stops.some((s) => s.dir === "S" && s.name === "Old Belchertown Road"));
 });
 
+test("chooseScreen matches logic.h", () => {
+  const normal = { apActive: false, forceSetup: false, hasSavedWifi: true, setupClient: false, connected: true, timeValid: true, offlineMs: 0, ms: 0 };
+  assert.strictEqual(P.chooseScreen(normal), "main");
+  const down = { ...normal, connected: false, offlineMs: 10000 };
+  const seen = { main: 0, wifiOffline: 0 };
+  for (let ms = 100000; ms < 160000; ms += 500) seen[P.chooseScreen({ ...down, ms })]++;
+  assert.deepStrictEqual(seen, { main: 80, wifiOffline: 40 });
+  assert.strictEqual(P.chooseScreen({ ...down, offlineMs: 9999, ms: 5000 }), "main");
+  assert.strictEqual(P.chooseScreen({ ...down, apActive: true, ms: 1000 }), "main");
+  assert.strictEqual(P.chooseScreen({ ...down, apActive: true, setupClient: true }), "setup");
+  assert.strictEqual(P.chooseScreen({ ...normal, apActive: true, hasSavedWifi: false }), "setup");
+  assert.strictEqual(P.chooseScreen({ ...normal, timeValid: false }), "settingClock");
+  assert.strictEqual(P.chooseScreen({ ...down, timeValid: false }), "wifiOffline");
+});
+
 test("isNight matches the firmware", () => {
   assert.ok(P.isNight(0, 23, 7));
   assert.ok(!P.isNight(7, 23, 7));

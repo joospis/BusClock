@@ -52,7 +52,12 @@
   <section class="card" data-panel="live">
     <div class="grid">
       <div><label for="stop">Stop and direction</label><select id="stop"><option>Loading stops…</option></select></div>
-      <div><label class="check" style="margin-top:26px"><input type="checkbox" id="offline"> Simulate offline (stop fetching)</label></div>
+      <div><label for="net">Connection</label>
+        <select id="net">
+          <option value="online">Online</option>
+          <option value="internet">Internet down (Wi-Fi up)</option>
+          <option value="wifi">Wi-Fi down (flashes WIFI OFFLINE)</option>
+        </select></div>
     </div>
     <div class="status" id="liveStatus">Starting…</div>
   </section>
@@ -101,7 +106,7 @@ const LIVE_INTERVAL_MS = 30000, LIVE_MAX_AGE_S = 180, TZ = "America/New_York";
 const DEFAULT_STOP = "34:S";
 
 let tab = "live", screen = "setup";
-const live = { stopKey: DEFAULT_STOP, deps: [], fetched: 0, error: "", lastTry: 0, stops: [] };
+const live = { stopKey: DEFAULT_STOP, deps: [], fetched: 0, error: "", lastTry: 0, stops: [], wifiDownAt: 0 };
 
 // ---------------------------------------------------------------- drawing
 const cv = $("panel"), ctx = cv.getContext("2d");
@@ -158,9 +163,16 @@ function render() {
       hasStop: $("hasStop").checked, walk, maxAge: LIVE_MAX_AGE_S }));
   } else {
     const nowMs = Date.now(), now = Math.floor(nowMs / 1000);
-    const { hour, minute } = nyTime(nowMs);
-    const dep = live.deps.filter((t) => t >= now).slice(0, 2);   // getDepartures()
-    P.drawMain(frame, P.mainView({ hour, minute, now, dep, fetched: live.fetched, hasStop: !!live.stopKey, walk, maxAge: LIVE_MAX_AGE_S }));
+    const wifiDown = $("net").value === "wifi";
+    const kind = P.chooseScreen({ apActive: false, forceSetup: false, hasSavedWifi: true, setupClient: false,
+      connected: !wifiDown, timeValid: true, offlineMs: wifiDown ? nowMs - live.wifiDownAt : 0, ms: Math.floor(performance.now()) });
+    if (kind === "wifiOffline") {
+      P.drawMessage(frame, "WIFI", "OFFLINE");
+    } else {
+      const { hour, minute } = nyTime(nowMs);
+      const dep = live.deps.filter((t) => t >= now).slice(0, 2);   // getDepartures()
+      P.drawMain(frame, P.mainView({ hour, minute, now, dep, fetched: live.fetched, hasStop: !!live.stopKey, walk, maxAge: LIVE_MAX_AGE_S }));
+    }
     liveStatus(now);
   }
   paint();
@@ -206,7 +218,7 @@ async function fetchDepartures() {
 }
 
 function tick() {
-  if (tab === "live" && !$("offline").checked && Date.now() - live.lastTry >= LIVE_INTERVAL_MS) {
+  if (tab === "live" && $("net").value === "online" && Date.now() - live.lastTry >= LIVE_INTERVAL_MS) {
     live.lastTry = Date.now();
     fetchDepartures().then(render);
   }
@@ -221,12 +233,16 @@ function liveStatus(now) {
   else if (age <= LIVE_MAX_AGE_S) h += '<span class="ok">updated ' + fmt(age) + " ago</span>";
   else h += '<span class="warn">last update ' + fmt(age) + " ago (>> dimmed)</span>";
   if (live.error) h += ' <span class="warn">(' + live.error + ")</span>";
-  if ($("offline").checked) h += " · offline";
+  const net = $("net").value;
+  if (net === "wifi") {
+    const left = Math.ceil((10000 - (Date.now() - live.wifiDownAt)) / 1000);
+    h += left > 0 ? " · Wi-Fi down, flashing starts in " + left + " s" : " · Wi-Fi down";
+  } else if (net === "internet") h += " · internet down";
   const upcoming = live.deps.filter((t) => t >= now);
   h += "<br>Upcoming: " + (upcoming.length
     ? upcoming.map((t) => new Date(t * 1000).toLocaleTimeString("en-US", { timeZone: TZ, hour: "numeric", minute: "2-digit" }) + " (" + Math.floor((t - now) / 60) + " min)").join(", ")
     : "none");
-  if (!$("offline").checked) h += "<br>Next request in " + Math.max(0, Math.ceil((LIVE_INTERVAL_MS - (Date.now() - live.lastTry)) / 1000)) + " s";
+  if (net === "online") h += "<br>Next request in " + Math.max(0, Math.ceil((LIVE_INTERVAL_MS - (Date.now() - live.lastTry)) / 1000)) + " s";
   $("liveStatus").innerHTML = h;
 }
 
@@ -249,7 +265,11 @@ $("stop").onchange = () => {
   render();
 };
 for (const id of ["walk", "bri"]) $(id).addEventListener("input", () => { $(id + "V").textContent = $(id).value; render(); });
-for (const id of ["m1", "m2", "age", "clock", "hasStop", "offline"]) $(id).addEventListener("input", render);
+for (const id of ["m1", "m2", "age", "clock", "hasStop"]) $(id).addEventListener("input", render);
+$("net").addEventListener("input", () => {
+  if ($("net").value === "wifi") live.wifiDownAt = Date.now();   // the 10 s grace starts now
+  render();
+});
 
 try { const t = localStorage.getItem("busclock-sim-tab"); if (t) document.querySelector(`.tabs [data-tab="${t}"]`)?.click(); } catch (e) {}
 loadStops();

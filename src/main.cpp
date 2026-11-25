@@ -266,19 +266,23 @@ bool timeValid() { return time(nullptr) > 1735689600; }  // after 2025-01-01
 
 void render() {
   bool connected = WiFi.status() == WL_CONNECTED;
+  uint32_t ms = millis();
+  ScreenInput si = {apActive, forceSetup, cfgSsid.length() > 0, apActive && WiFi.softAPgetStationNum() > 0,
+                    connected, timeValid(), connected ? 0 : ms - disconnectedSince, ms};
   uint8_t bri = cfgBri;
-  panel->clearScreen();
-
-  if (apActive && (!connected || forceSetup)) {
-    drawSetupScreen(panelCanvas, AP_SSID, WiFi.softAPIP().toString().c_str());
-  } else if (!timeValid()) {
-    drawMessage(panelCanvas, connected ? "SETTING" : "WIFI", connected ? "CLOCK..." : "OFFLINE");
-  } else {
+  if (si.timeValid) {
     time_t now = time(nullptr);
     struct tm lt;
     localtime_r(&now, &lt);
     if (isNight(lt.tm_hour, cfgNightStart, cfgNightEnd)) bri = cfgNightBri;
-    drawMainNow(now);
+  }
+
+  panel->clearScreen();
+  switch (chooseScreen(si)) {
+    case SCREEN_SETUP:         drawSetupScreen(panelCanvas, AP_SSID, WiFi.softAPIP().toString().c_str()); break;
+    case SCREEN_SETTING_CLOCK: drawMessage(panelCanvas, "SETTING", "CLOCK..."); break;
+    case SCREEN_WIFI_OFFLINE:  drawMessage(panelCanvas, "WIFI", "OFFLINE"); break;
+    case SCREEN_MAIN:          drawMainNow(time(nullptr)); break;
   }
 
   if (bri != appliedBri) { panel->setBrightness8(bri); appliedBri = bri; }

@@ -150,6 +150,19 @@
     return hour >= start || hour < end;
   }
 
+  const OFFLINE_FLASH_MAIN_MS = 4000, OFFLINE_FLASH_OFFLINE_MS = 2000, OFFLINE_FLASH_GRACE_MS = 10000;
+
+  // s: {apActive, forceSetup, hasSavedWifi, setupClient, connected, timeValid, offlineMs, ms}
+  // Returns "main" | "setup" | "settingClock" | "wifiOffline", like chooseScreen() in logic.h.
+  function chooseScreen(s) {
+    if (s.apActive && (!s.hasSavedWifi || s.forceSetup || s.setupClient)) return "setup";
+    if (!s.timeValid) return s.connected ? "settingClock" : "wifiOffline";
+    if (!s.connected && s.offlineMs >= OFFLINE_FLASH_GRACE_MS &&
+        s.ms % (OFFLINE_FLASH_MAIN_MS + OFFLINE_FLASH_OFFLINE_MS) >= OFFLINE_FLASH_MAIN_MS)
+      return "wifiOffline";
+    return "main";
+  }
+
   // ---------------------------------------------------------------- live_parse.h
   function parseDate(s) {
     const m = /Date\((-?\d+)/.exec(s || "");
@@ -198,7 +211,7 @@
 
   const api = {
     PANEL_W, PANEL_H, C, Frame, textWidth, drawText, drawCentered, urgencyColor, mainView,
-    drawMain, drawSetupScreen, drawMessage, fitScale, isNight, parseDate, extractDepartures, extractStops, toRGB,
+    drawMain, drawSetupScreen, drawMessage, fitScale, isNight, chooseScreen, parseDate, extractDepartures, extractStops, toRGB,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.BusPanel = api;
