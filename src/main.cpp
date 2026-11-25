@@ -29,6 +29,7 @@
   and dims the >> icon after 3 minutes so you can tell.
 */
 
+#include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
 #include <DNSServer.h>

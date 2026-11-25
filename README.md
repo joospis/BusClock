@@ -6,7 +6,7 @@ Everything comes from PVTA's bus tracker (`bustracker.pvta.com/InfoPoint/rest/`)
 
 ```
 platformio.ini            build, flash and test settings
-src/BusClock.ino          the firmware: Wi-Fi, web server, fetching, wiring it together
+src/main.cpp              the firmware: Wi-Fi, web server, fetching, wiring it together
 src/display.h             everything drawn on the panel (pure C++, unit-tested)
 src/live_parse.h          reads the PVTA bus tracker responses (pure C++, unit-tested)
 src/logic.h               stop keys, night window (pure C++, unit-tested)

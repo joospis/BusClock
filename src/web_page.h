@@ -1,5 +1,4 @@
-// web_page.h - setup page served at / (kept out of the .ino so PlatformIO's
-// .ino preprocessor does not misread the embedded JavaScript).
+// web_page.h - the setup page served at / (HTML, CSS and JS in one string).
 #pragma once
 #include <pgmspace.h>
 
