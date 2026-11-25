@@ -49,6 +49,63 @@ void test_night_disabled_when_equal() {
   for (int h = 0; h < 24; h++) TEST_ASSERT_FALSE(isNight(h, 6, 6));
 }
 
+// ------------------------------------------------------------------ chooseScreen
+// Connected, clock set, setup network closed: the normal state.
+static ScreenInput normal() {
+  ScreenInput s = {false, false, true, false, true, true, 0, 0};
+  return s;
+}
+
+void test_screen_normal() {
+  TEST_ASSERT_EQUAL_INT(SCREEN_MAIN, chooseScreen(normal()));
+}
+
+void test_screen_setup_only_when_needed() {
+  ScreenInput s = normal();
+  s.apActive = true; s.connected = false; s.offlineMs = 20 * 60 * 1000;  // outage reopened setup
+  s.ms = 1000;                                                           // main phase
+  TEST_ASSERT_EQUAL_INT(SCREEN_MAIN, chooseScreen(s));                   // countdown stays up
+  s.setupClient = true;
+  TEST_ASSERT_EQUAL_INT(SCREEN_SETUP, chooseScreen(s));                  // a phone joined setup
+  s.setupClient = false; s.forceSetup = true;
+  TEST_ASSERT_EQUAL_INT(SCREEN_SETUP, chooseScreen(s));                  // BOOT held
+  ScreenInput fresh = {true, false, false, false, false, false, 0, 0};   // first boot
+  TEST_ASSERT_EQUAL_INT(SCREEN_SETUP, chooseScreen(fresh));
+}
+
+void test_screen_clock_not_set() {
+  ScreenInput s = normal();
+  s.timeValid = false;
+  TEST_ASSERT_EQUAL_INT(SCREEN_SETTING_CLOCK, chooseScreen(s));
+  s.connected = false;
+  TEST_ASSERT_EQUAL_INT(SCREEN_WIFI_OFFLINE, chooseScreen(s));          // nothing to count down
+}
+
+void test_screen_flashes_when_wifi_down() {
+  ScreenInput s = normal();
+  s.connected = false;
+  s.offlineMs = OFFLINE_FLASH_GRACE_MS;
+  int mainCount = 0, offCount = 0;
+  for (uint32_t ms = 100000; ms < 100000 + 60000; ms += 500) {   // one minute, sampled like render()
+    s.ms = ms;
+    ScreenKind k = chooseScreen(s);
+    TEST_ASSERT_TRUE(k == SCREEN_MAIN || k == SCREEN_WIFI_OFFLINE);
+    (k == SCREEN_MAIN ? mainCount : offCount)++;
+  }
+  TEST_ASSERT_EQUAL_INT(80, mainCount);   // 4 s of every 6 s
+  TEST_ASSERT_EQUAL_INT(40, offCount);    // 2 s of every 6 s
+  s.ms = 4000;  TEST_ASSERT_EQUAL_INT(SCREEN_WIFI_OFFLINE, chooseScreen(s));
+  s.ms = 5999;  TEST_ASSERT_EQUAL_INT(SCREEN_WIFI_OFFLINE, chooseScreen(s));
+  s.ms = 6000;  TEST_ASSERT_EQUAL_INT(SCREEN_MAIN, chooseScreen(s));
+}
+
+void test_screen_no_flash_during_short_blip() {
+  ScreenInput s = normal();
+  s.connected = false;
+  s.offlineMs = OFFLINE_FLASH_GRACE_MS - 1;
+  for (uint32_t ms = 0; ms < 12000; ms += 500) { s.ms = ms; TEST_ASSERT_EQUAL_INT(SCREEN_MAIN, chooseScreen(s)); }
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_stop_key_new_format);
@@ -57,5 +114,10 @@ int main() {
   RUN_TEST(test_night_wrapping_midnight);
   RUN_TEST(test_night_same_day);
   RUN_TEST(test_night_disabled_when_equal);
+  RUN_TEST(test_screen_normal);
+  RUN_TEST(test_screen_setup_only_when_needed);
+  RUN_TEST(test_screen_clock_not_set);
+  RUN_TEST(test_screen_flashes_when_wifi_down);
+  RUN_TEST(test_screen_no_flash_during_short_blip);
   return UNITY_END();
 }

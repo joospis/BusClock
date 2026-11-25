@@ -49,7 +49,7 @@ GPIO 12 is a boot-strapping pin. If the ESP32 won't boot while the panel is conn
 3. Choose your home network and enter its password. Set your walk time and brightness, then tap **Save**.
 4. The clock restarts and joins your Wi-Fi. Open **http://busclock.local** from your home network and choose your stop and direction (the stop list comes from the bus tracker, so it only appears once the clock is online). Use the same page to change settings later. If that address doesn't resolve on your device, use the IP address shown on the status page.
 
-Hold the ESP32's **BOOT** button for 3 seconds to reopen the setup network. If the clock can't reach your Wi-Fi for 10 minutes, it reopens the setup network on its own and keeps counting down to the last departures it received.
+Hold the ESP32's **BOOT** button for 3 seconds to reopen the setup network. If your Wi-Fi goes down, the panel alternates between the countdown (4 seconds, using the last departures it received) and **WIFI OFFLINE** (2 seconds). After 10 minutes without Wi-Fi it also reopens the setup network; the panel switches to the setup screen once a phone joins it.
 
 **Colors:** green means you have time, amber means leave now, and red means you'd have to run. The thresholds are based on your walk time. **HR** means the next bus is more than 99 minutes away. **NO BUS** means the bus tracker lists no upcoming Route 30 buses at your stop (for example, overnight). **NO DATA** means the tracker hasn't been reachable and every bus it last reported has left. **--** means the first response hasn't arrived yet.
 
@@ -69,7 +69,7 @@ The parity check renders every scenario in `tools/parity/scenarios.json` with bo
 
 Open `sim/index.html` in a browser (double-clicking the file works; no server needed). It draws the panel with the same code and colors as the firmware.
 
-- **Live**: real departures from the PVTA bus tracker for any stop on the route, polled every 30 seconds like the clock. Tick **Simulate offline** to watch the **>>** dim and the countdown keep going on cached data.
+- **Live**: real departures from the PVTA bus tracker for any stop on the route, polled every 30 seconds like the clock. Set **Connection** to *Internet down* to watch the **>>** dim while the countdown keeps going on cached data, or *Wi-Fi down* to see it alternate with **WIFI OFFLINE**.
 - **Manual**: set the next two buses, data age and clock time by hand to check colors and edge cases.
 - **Other screens**: Wi-Fi setup, connecting and clock-sync screens.
 
