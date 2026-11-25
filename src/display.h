@@ -1,0 +1,174 @@
+// display.h - everything drawn on the 64x32 panel. Plain C++ (no Arduino calls)
+// so it can be unit-tested and compared against the browser simulator
+// (sim/panel.js is a line-for-line port; tools/parity checks they match).
+#pragma once
+#include <ctype.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include <time.h>
+
+#define PANEL_W 64
+#define PANEL_H 32
+
+// Colors (from the mockup). LEDs look brighter than a screen; tweak to taste.
+#define RGB565(r, g, b) (uint16_t)((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | ((b) >> 3))
+static const uint16_t C_CLOCK    = RGB565(0xDD, 0xDD, 0xDD);
+static const uint16_t C_LABEL    = RGB565(0xDD, 0xDD, 0xDD);
+static const uint16_t C_LINE     = RGB565(0x33, 0x33, 0x33);
+static const uint16_t C_CHEVRON  = RGB565(0x77, 0x77, 0x77);  // fresh data
+static const uint16_t C_CHEV_OLD = RGB565(0x2A, 0x2A, 0x2A);  // showing cached data
+static const uint16_t C_NEXT     = RGB565(0x99, 0x99, 0x99);
+static const uint16_t C_DIM      = RGB565(0x77, 0x77, 0x77);
+static const uint16_t C_GREEN    = RGB565(0x33, 0xEE, 0x55);
+static const uint16_t C_AMBER    = RGB565(0xFF, 0xAA, 0x00);
+static const uint16_t C_RED      = RGB565(0xFF, 0x33, 0x33);
+
+// Anything that can light a pixel: the real panel, a test buffer, ...
+struct Canvas {
+  virtual void set(int x, int y, uint16_t c) = 0;
+  virtual ~Canvas() {}
+};
+
+// ------------------------------------------------------------------ font (3x5)
+static const char FONT_CHARS[] = " !-.:0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+static const uint8_t FONT[][5] = {
+  {0,0,0,0,0},{2,2,2,0,2},{0,0,7,0,0},{0,0,0,0,2},{0,2,0,2,0},           // space ! - . :
+  {7,5,5,5,7},{2,6,2,2,7},{7,1,7,4,7},{7,1,7,1,7},{5,5,7,1,1},           // 0-4
+  {7,4,7,1,7},{7,4,7,5,7},{7,1,2,2,2},{7,5,7,5,7},{7,5,7,1,7},           // 5-9
+  {2,5,7,5,5},{6,5,6,5,6},{3,4,4,4,3},{6,5,5,5,6},{7,4,6,4,7},{7,4,6,4,4}, // A-F
+  {3,4,5,5,3},{5,5,7,5,5},{7,2,2,2,7},{1,1,1,5,2},{5,5,6,5,5},{4,4,4,4,7}, // G-L
+  {5,7,7,5,5},{6,5,5,5,5},{2,5,5,5,2},{6,5,6,4,4},{2,5,5,6,3},{6,5,6,5,5}, // M-R
+  {3,4,2,1,6},{7,2,2,2,2},{5,5,5,5,7},{5,5,5,5,2},{5,5,7,7,5},{5,5,2,5,5}, // S-X
+  {5,5,2,2,2},{7,1,2,4,7}                                                  // Y Z
+};
+static const uint8_t CHEVRON[5] = {0x48, 0x24, 0x12, 0x24, 0x48};  // 7 px wide, ">>"
+
+static inline void px(Canvas& cv, int x, int y, uint16_t c) {
+  if (x >= 0 && x < PANEL_W && y >= 0 && y < PANEL_H) cv.set(x, y, c);
+}
+
+// Width in pixels of `s` drawn at scale k (3 px glyphs + 1 px gap, no trailing gap).
+static inline int textWidth(const char* s, int k) {
+  int n = (int)strlen(s);
+  return n ? n * 4 * k - k : 0;
+}
+
+// Unknown characters draw as a space. Lowercase is drawn as uppercase.
+static inline void drawText(Canvas& cv, int x, int y, const char* s, uint16_t c, int k) {
+  for (; *s; s++) {
+    char ch = (char)toupper((unsigned char)*s);
+    const char* p = ch ? strchr(FONT_CHARS, ch) : nullptr;
+    int g = p ? (int)(p - FONT_CHARS) : 0;
+    for (int r = 0; r < 5; r++)
+      for (int col = 0; col < 3; col++)
+        if (FONT[g][r] & (4 >> col))
+          for (int dy = 0; dy < k; dy++)
+            for (int dx = 0; dx < k; dx++) px(cv, x + col * k + dx, y + r * k + dy, c);
+    x += 4 * k;
+  }
+}
+
+static inline void drawCentered(Canvas& cv, int y, const char* s, uint16_t c, int k) {
+  drawText(cv, (PANEL_W - textWidth(s, k)) / 2, y, s, c, k);
+}
+
+// ------------------------------------------------------------------ main screen
+// Green: you have time. Amber: time to head out. Red: you'd have to run.
+static inline uint16_t urgencyColor(long mins, int walk) {
+  if (mins < walk) return C_RED;
+  if (mins < walk + 3) return C_AMBER;
+  return C_GREEN;
+}
+
+// What the main screen needs to know.
+struct MainInput {
+  int hour, minute;       // local time, 24 h
+  time_t now;
+  const time_t* dep;      // upcoming departures (>= now), ascending
+  int n;                  // how many in dep
+  time_t fetched;         // when the bus tracker last answered, 0 = never
+  bool hasStop;           // a stop is configured
+  int walk;               // minutes to walk to the stop
+  int maxAge;             // seconds before data counts as stale
+};
+
+// What the main screen shows (separate from drawing so it's easy to test).
+struct MainView {
+  char clock[8];
+  char big[6];  const char* unit;  uint16_t bigColor;   // bottom left
+  char next[6]; uint16_t nextColor; uint16_t chevColor; // bottom right
+  bool fresh;
+};
+
+static inline MainView mainView(const MainInput& in) {
+  MainView v;
+  snprintf(v.clock, sizeof v.clock, "%d:%02d", in.hour % 12 ? in.hour % 12 : 12, in.minute);
+  v.fresh = in.fetched && in.now - in.fetched <= in.maxAge;
+
+  if (!in.hasStop) {
+    strcpy(v.big, "NO"); v.unit = "STOP"; v.bigColor = C_DIM;
+  } else if (!in.fetched) {
+    strcpy(v.big, "--"); v.unit = ""; v.bigColor = C_DIM;       // waiting for the first response
+  } else if (in.n == 0 && !v.fresh) {
+    strcpy(v.big, "NO"); v.unit = "DATA"; v.bigColor = C_DIM;   // offline and cached buses have left
+  } else if (in.n == 0) {
+    strcpy(v.big, "NO"); v.unit = "BUS"; v.bigColor = C_DIM;
+  } else {
+    long m = (long)(in.dep[0] - in.now) / 60;
+    if (m < 100) {
+      snprintf(v.big, sizeof v.big, "%ld", m); v.unit = "MIN"; v.bigColor = urgencyColor(m, in.walk);
+    } else {
+      long h = (m + 30) / 60; if (h > 99) h = 99;
+      snprintf(v.big, sizeof v.big, "%ld", h); v.unit = "HR"; v.bigColor = C_GREEN;
+    }
+  }
+
+  v.nextColor = C_NEXT;
+  v.chevColor = v.fresh ? C_CHEVRON : C_CHEV_OLD;
+  if (in.hasStop && in.n >= 2) {
+    long m2 = (long)(in.dep[1] - in.now) / 60;
+    if (m2 < 100) snprintf(v.next, sizeof v.next, "%ldM", m2);
+    else { long h2 = (m2 + 30) / 60; if (h2 > 99) h2 = 99; snprintf(v.next, sizeof v.next, "%ldH", h2); }
+  } else {
+    strcpy(v.next, "--");
+  }
+  return v;
+}
+
+static inline void drawMain(Canvas& cv, const MainView& v) {
+  // Top section: rows 0-11, clock 10 px tall with 1 px above and below.
+  drawCentered(cv, 1, v.clock, C_CLOCK, 2);
+
+  // Dividers
+  for (int x = 0; x < PANEL_W; x++) px(cv, x, 12, C_LINE);
+  for (int y = 13; y < PANEL_H; y++) px(cv, 44, y, C_LINE);
+
+  // Bottom left (44 x 19): big number + small label, centered as a group.
+  int gw = textWidth(v.big, 3) + 4 + textWidth(v.unit, 1);
+  int gx = (44 - gw) / 2;
+  drawText(cv, gx, 15, v.big, v.bigColor, 3);
+  drawText(cv, gx + textWidth(v.big, 3) + 4, 25, v.unit, C_LABEL, 1);
+
+  // Bottom right (19 x 19): chevron + the bus after next.
+  for (int r = 0; r < 5; r++)
+    for (int c = 0; c < 7; c++)
+      if (CHEVRON[r] & (0x40 >> c)) px(cv, 51 + c, 16 + r, v.chevColor);
+  drawText(cv, 45 + (19 - textWidth(v.next, 1)) / 2, 24, v.next, v.nextColor, 1);
+}
+
+// ------------------------------------------------------------------ other screens
+static inline void drawSetupScreen(Canvas& cv, const char* ssid, const char* pass, const char* ip) {
+  char pw[32];
+  snprintf(pw, sizeof pw, "PW %s", pass);
+  drawCentered(cv, 2, "WIFI SETUP", C_AMBER, 1);
+  drawCentered(cv, 10, ssid, C_CLOCK, 1);
+  drawCentered(cv, 18, pw, C_CLOCK, 1);
+  drawCentered(cv, 26, ip, C_NEXT, 1);
+}
+
+// One line centered, or two lines when b is given.
+static inline void drawMessage(Canvas& cv, const char* a, const char* b) {
+  drawCentered(cv, b ? 9 : 13, a, C_CLOCK, 1);
+  if (b) drawCentered(cv, 18, b, C_NEXT, 1);
+}

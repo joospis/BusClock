@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BusClock Simulator</title>
+<style>
+  :root {
+    --bg: #0d0d0f; --card: #17171a; --line: #2a2a2f; --text: #e8e8ea; --muted: #9a9aa2;
+    --accent: #fbb033; --ok: #5ee27a; --warn: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 20px 16px 40px; }
+  h1 { font-size: 20px; margin: 0; }
+  .sub { color: var(--muted); font-size: 13px; margin: 2px 0 16px; }
+  .frame { background: #050505; border: 1px solid var(--line); border-radius: 14px; padding: 14px; box-shadow: 0 10px 40px #0008; }
+  canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+  .tabs { display: flex; gap: 6px; margin: 18px 0 0; }
+  .tabs button { flex: 1; padding: 9px; border: 1px solid var(--line); border-bottom: 0; border-radius: 10px 10px 0 0; background: #111114; color: var(--muted); font: inherit; cursor: pointer; }
+  .tabs button[aria-selected="true"] { background: var(--card); color: var(--text); font-weight: 600; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 0 0 12px 12px; padding: 14px 16px; }
+  .card + .card { border-radius: 12px; margin-top: 14px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 16px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  input, select { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid #3a3a40; background: #101013; color: var(--text); font: inherit; }
+  input[type=range] { padding: 0; border: 0; background: none; accent-color: var(--accent); }
+  input[type=checkbox] { width: auto; accent-color: var(--accent); }
+  .check { display: flex; gap: 8px; align-items: center; color: var(--text); font-size: 14px; }
+  .btns { display: flex; flex-wrap: wrap; gap: 8px; }
+  .btns button { padding: 8px 12px; border-radius: 8px; border: 1px solid #3a3a40; background: #222227; color: var(--text); font: inherit; cursor: pointer; }
+  .btns button.on { border-color: var(--accent); color: var(--accent); }
+  .status { font-size: 13px; color: var(--muted); margin-top: 12px; line-height: 1.7; }
+  .ok { color: var(--ok); } .warn { color: var(--warn); }
+  [hidden] { display: none !important; }
+  code { font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>BusClock simulator</h1>
+  <p class="sub">The 64×32 panel, drawn by <code>panel.js</code>, a port of <code>src/display.h</code> that <code>tools/parity/check.sh</code> keeps pixel-identical.</p>
+
+  <div class="frame"><canvas id="panel" width="640" height="320" aria-label="Simulated LED panel"></canvas></div>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" data-tab="live" aria-selected="true">Live</button>
+    <button role="tab" data-tab="manual" aria-selected="false">Manual</button>
+    <button role="tab" data-tab="screens" aria-selected="false">Other screens</button>
+  </div>
+
+  <section class="card" data-panel="live">
+    <div class="grid">
+      <div><label for="stop">Stop and direction</label><select id="stop"><option>Loading stops…</option></select></div>
+      <div><label class="check" style="margin-top:26px"><input type="checkbox" id="offline"> Simulate offline (stop fetching)</label></div>
+    </div>
+    <div class="status" id="liveStatus">Starting…</div>
+  </section>
+
+  <section class="card" data-panel="manual" hidden>
+    <div class="grid">
+      <div><label for="m1">Next bus (minutes, blank = none)</label><input id="m1" type="number" min="0" value="7"></div>
+      <div><label for="m2">Bus after (minutes, blank = none)</label><input id="m2" type="number" min="0" value="22"></div>
+      <div><label for="age">Data age</label>
+        <select id="age">
+          <option value="10">Fresh (10 s old)</option>
+          <option value="600">Stale (10 min old)</option>
+          <option value="never">Never received</option>
+        </select></div>
+      <div><label for="clock">Clock</label><input id="clock" type="time" value="16:13"></div>
+      <div><label class="check" style="margin-top:26px"><input type="checkbox" id="hasStop" checked> Stop configured</label></div>
+    </div>
+  </section>
+
+  <section class="card" data-panel="screens" hidden>
+    <div class="btns" id="screens">
+      <button data-screen="setup" class="on">Wi-Fi setup</button>
+      <button data-screen="connecting">Connecting</button>
+      <button data-screen="setting">Setting clock</button>
+      <button data-screen="offline">Wi-Fi offline</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="grid">
+      <div><label for="walk">Walk to the stop: <b id="walkV">4</b> min</label><input id="walk" type="range" min="0" max="20" value="4"></div>
+      <div><label for="bri">Brightness: <b id="briV">128</b></label><input id="bri" type="range" min="1" max="255" value="128"></div>
+    </div>
+  </section>
+</main>
+
+<script src="panel.js"></script>
+<script>
+"use strict";
+const P = window.BusPanel;
+const $ = (id) => document.getElementById(id);
+
+// Same constants as the firmware
+const ROUTE_ID = 30030, LIVE_BASE = "https://bustracker.pvta.com/InfoPoint/rest/";
+const LIVE_INTERVAL_MS = 30000, LIVE_MAX_AGE_S = 180, TZ = "America/New_York";
+const DEFAULT_STOP = "34:S";
+
+let tab = "live", screen = "setup";
+const live = { stopKey: DEFAULT_STOP, deps: [], fetched: 0, error: "", lastTry: 0, stops: [] };
+
+// ---------------------------------------------------------------- drawing
+const cv = $("panel"), ctx = cv.getContext("2d");
+const SCALE = 10;
+const frame = new P.Frame();
+
+function paint() {
+  const bri = Number($("bri").value) / 255;
+  ctx.fillStyle = "#050505";
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  for (let y = 0; y < P.PANEL_H; y++)
+    for (let x = 0; x < P.PANEL_W; x++) {
+      const c = frame.get(x, y);
+      const cx = x * SCALE + SCALE / 2, cy = y * SCALE + SCALE / 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, SCALE * 0.38, 0, Math.PI * 2);
+      if (c) {
+        // LEDs on screens look dimmer than in a room; keep a floor so low brightness stays visible
+        const k = 0.25 + 0.75 * bri;
+        const [r, g, b] = P.toRGB(c).map((v) => Math.round(v * k));
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        ctx.shadowColor = `rgba(${r},${g},${b},0.8)`;
+        ctx.shadowBlur = 6 * k;
+      } else {
+        ctx.fillStyle = "#141414";
+        ctx.shadowBlur = 0;
+      }
+      ctx.fill();
+    }
+  ctx.shadowBlur = 0;
+}
+
+function nyTime(epochMs) {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", minute: "numeric", hourCycle: "h23" })
+    .formatToParts(new Date(epochMs));
+  const get = (t) => Number(parts.find((p) => p.type === t).value);
+  return { hour: get("hour"), minute: get("minute") };
+}
+
+function render() {
+  frame.clear();
+  const walk = Number($("walk").value);
+  if (tab === "screens") {
+    if (screen === "setup") P.drawSetupScreen(frame, "BusClock", "30303030", "192.168.4.1");
+    else if (screen === "connecting") P.drawMessage(frame, "CONNECTING", "WIFI...");
+    else if (screen === "setting") P.drawMessage(frame, "SETTING", "CLOCK...");
+    else P.drawMessage(frame, "WIFI", "OFFLINE");
+  } else if (tab === "manual") {
+    const now = 1795640000;
+    const [hh, mm] = ($("clock").value || "16:13").split(":").map(Number);
+    const dep = [$("m1").value, $("m2").value].filter((v) => v !== "").map((m) => now + Number(m) * 60).sort((a, b) => a - b);
+    const age = $("age").value;
+    P.drawMain(frame, P.mainView({ hour: hh, minute: mm, now, dep, fetched: age === "never" ? 0 : now - Number(age),
+      hasStop: $("hasStop").checked, walk, maxAge: LIVE_MAX_AGE_S }));
+  } else {
+    const nowMs = Date.now(), now = Math.floor(nowMs / 1000);
+    const { hour, minute } = nyTime(nowMs);
+    const dep = live.deps.filter((t) => t >= now).slice(0, 2);   // getDepartures()
+    P.drawMain(frame, P.mainView({ hour, minute, now, dep, fetched: live.fetched, hasStop: !!live.stopKey, walk, maxAge: LIVE_MAX_AGE_S }));
+    liveStatus(now);
+  }
+  paint();
+}
+
+// ---------------------------------------------------------------- live data (same API and rate limit as the firmware)
+async function getJson(path) {
+  const r = await fetch(LIVE_BASE + path, { headers: { Accept: "application/json" } });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return r.json();
+}
+
+async function loadStops() {
+  try {
+    live.stops = P.extractStops(await getJson("RouteDetails/Get/" + ROUTE_ID));
+    const sel = $("stop");
+    sel.innerHTML = "";
+    for (const s of live.stops) {
+      const o = document.createElement("option");
+      o.value = s.id + ":" + s.dir;
+      o.textContent = s.name + " → " + s.toward;
+      sel.appendChild(o);
+    }
+    sel.value = live.stopKey;
+  } catch (e) {
+    $("stop").innerHTML = "<option>Couldn't load stops (" + e.message + ")</option>";
+  }
+}
+
+async function fetchDepartures() {
+  const [id, dir] = live.stopKey.split(":");
+  const key = live.stopKey;
+  try {
+    const json = await getJson("StopDepartures/Get/" + id);
+    if (key !== live.stopKey) return;   // stop changed meanwhile
+    const now = Math.floor(Date.now() / 1000);
+    live.deps = P.extractDepartures(json, ROUTE_ID, dir, now, 8);
+    live.fetched = now;
+    live.error = "";
+  } catch (e) {
+    live.error = e.message || String(e);
+  }
+}
+
+function tick() {
+  if (tab === "live" && !$("offline").checked && Date.now() - live.lastTry >= LIVE_INTERVAL_MS) {
+    live.lastTry = Date.now();
+    fetchDepartures().then(render);
+  }
+  render();
+}
+
+function liveStatus(now) {
+  const age = live.fetched ? now - live.fetched : -1;
+  const fmt = (s) => (s < 120 ? s + " s" : Math.round(s / 60) + " min");
+  let h = "Bus tracker: ";
+  if (age < 0) h += '<span class="warn">no data yet</span>';
+  else if (age <= LIVE_MAX_AGE_S) h += '<span class="ok">updated ' + fmt(age) + " ago</span>";
+  else h += '<span class="warn">last update ' + fmt(age) + " ago (>> dimmed)</span>";
+  if (live.error) h += ' <span class="warn">(' + live.error + ")</span>";
+  if ($("offline").checked) h += " · offline";
+  const upcoming = live.deps.filter((t) => t >= now);
+  h += "<br>Upcoming: " + (upcoming.length
+    ? upcoming.map((t) => new Date(t * 1000).toLocaleTimeString("en-US", { timeZone: TZ, hour: "numeric", minute: "2-digit" }) + " (" + Math.floor((t - now) / 60) + " min)").join(", ")
+    : "none");
+  if (!$("offline").checked) h += "<br>Next request in " + Math.max(0, Math.ceil((LIVE_INTERVAL_MS - (Date.now() - live.lastTry)) / 1000)) + " s";
+  $("liveStatus").innerHTML = h;
+}
+
+// ---------------------------------------------------------------- controls
+document.querySelectorAll(".tabs button").forEach((b) => (b.onclick = () => {
+  tab = b.dataset.tab;
+  document.querySelectorAll(".tabs button").forEach((x) => x.setAttribute("aria-selected", x === b));
+  document.querySelectorAll("[data-panel]").forEach((p) => (p.hidden = p.dataset.panel !== tab));
+  try { localStorage.setItem("busclock-sim-tab", tab); } catch (e) {}
+  render();
+}));
+document.querySelectorAll("#screens button").forEach((b) => (b.onclick = () => {
+  screen = b.dataset.screen;
+  document.querySelectorAll("#screens button").forEach((x) => x.classList.toggle("on", x === b));
+  render();
+}));
+$("stop").onchange = () => {
+  live.stopKey = $("stop").value;
+  live.deps = []; live.fetched = 0; live.error = "";   // old stop's data no longer applies
+  render();
+};
+for (const id of ["walk", "bri"]) $(id).addEventListener("input", () => { $(id + "V").textContent = $(id).value; render(); });
+for (const id of ["m1", "m2", "age", "clock", "hasStop", "offline"]) $(id).addEventListener("input", render);
+
+try { const t = localStorage.getItem("busclock-sim-tab"); if (t) document.querySelector(`.tabs [data-tab="${t}"]`)?.click(); } catch (e) {}
+loadStops();
+tick();
+setInterval(tick, 500);   // the firmware redraws every 500 ms
+</script>
+</body>
+</html>

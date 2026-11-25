@@ -1,0 +1,20 @@
+[
+  {"name": "minutes green",    "screen": "main", "hour": 16, "minute": 13, "deps": [420, 1320], "fetchedAgo": 10},
+  {"name": "amber",            "screen": "main", "hour": 9,  "minute": 5,  "deps": [300, 2400], "fetchedAgo": 5},
+  {"name": "amber edge",       "screen": "main", "hour": 9,  "minute": 6,  "deps": [360, 419],  "fetchedAgo": 180},
+  {"name": "red edge",         "screen": "main", "hour": 9,  "minute": 7,  "deps": [239, 240],  "fetchedAgo": 181},
+  {"name": "red one bus",      "screen": "main", "hour": 23, "minute": 59, "deps": [119],       "fetchedAgo": 20},
+  {"name": "double digits",    "screen": "main", "hour": 12, "minute": 0,  "deps": [5940, 5999], "fetchedAgo": 0},
+  {"name": "hours",            "screen": "main", "hour": 0,  "minute": 30, "deps": [27000, 30600], "fetchedAgo": 60},
+  {"name": "capped hours",     "screen": "main", "hour": 3,  "minute": 7,  "deps": [720000, 900000], "fetchedAgo": 60},
+  {"name": "stale",            "screen": "main", "hour": 10, "minute": 41, "deps": [600, 1500], "fetchedAgo": 600},
+  {"name": "no bus",           "screen": "main", "hour": 1,  "minute": 15, "deps": [],          "fetchedAgo": 30},
+  {"name": "no data",          "screen": "main", "hour": 1,  "minute": 15, "deps": [],          "fetchedAgo": 900},
+  {"name": "waiting",          "screen": "main", "hour": 7,  "minute": 0,  "deps": [],          "fetchedAgo": null},
+  {"name": "no stop",          "screen": "main", "hour": 7,  "minute": 0,  "deps": [],          "fetchedAgo": null, "hasStop": false},
+  {"name": "walk 0",           "screen": "main", "hour": 18, "minute": 22, "deps": [60, 180],   "fetchedAgo": 1, "walk": 0},
+  {"name": "setup",            "screen": "setup", "ssid": "BusClock", "pass": "30303030", "ip": "192.168.4.1"},
+  {"name": "long ssid",        "screen": "setup", "ssid": "A-VERY-LONG-NETWORK-NAME", "pass": "30303030", "ip": "192.168.4.1"},
+  {"name": "connecting",       "screen": "message", "a": "CONNECTING", "b": "WIFI..."},
+  {"name": "lowercase unknown","screen": "message", "a": "setting?", "b": null}
+]
