@@ -30,7 +30,7 @@ int main(int argc, char** argv) {
                       fetched, s["hasStop"] | true, s["walk"] | 4, 180};
       drawMain(fr, mainView(in));
     } else if (screen == "setup") {
-      drawSetupScreen(fr, s["ssid"] | "", s["pass"] | "", s["ip"] | "");
+      drawSetupScreen(fr, s["ssid"] | "", s["ip"] | "");
     } else {
       drawMessage(fr, s["a"] | "", s["b"].isNull() ? nullptr : (const char*)(s["b"] | ""));
     }

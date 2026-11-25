@@ -122,16 +122,25 @@
     drawText(cv, 45 + idiv(19 - textWidth(v.next, 1), 2), 24, v.next, v.nextColor, 1);
   }
 
-  function drawSetupScreen(cv, ssid, pass, ip) {
-    drawCentered(cv, 2, "WIFI SETUP", C.AMBER, 1);
-    drawCentered(cv, 10, ssid, C.CLOCK, 1);
-    drawCentered(cv, 18, "PW " + pass, C.CLOCK, 1);
-    drawCentered(cv, 26, ip, C.NEXT, 1);
+  function fitScale(s) {
+    return textWidth(s, 2) <= PANEL_W ? 2 : 1;
+  }
+
+  function drawFitted(cv, y, s, c) {
+    const k = fitScale(s);
+    drawCentered(cv, k === 2 ? y : y + 2, s, c, k);
+  }
+
+  function drawSetupScreen(cv, ssid, ip) {
+    drawCentered(cv, 2, "JOIN WIFI", C.AMBER, 1);
+    drawFitted(cv, 10, ssid, C.CLOCK);
+    drawCentered(cv, 25, ip, C.NEXT, 1);
   }
 
   function drawMessage(cv, a, b) {
-    drawCentered(cv, b ? 9 : 13, a, C.CLOCK, 1);
-    if (b) drawCentered(cv, 18, b, C.NEXT, 1);
+    if (!b) { drawFitted(cv, 11, a, C.CLOCK); return; }
+    drawFitted(cv, 4, a, C.CLOCK);
+    drawFitted(cv, 18, b, C.NEXT);
   }
 
   // ---------------------------------------------------------------- logic.h
@@ -189,7 +198,7 @@
 
   const api = {
     PANEL_W, PANEL_H, C, Frame, textWidth, drawText, drawCentered, urgencyColor, mainView,
-    drawMain, drawSetupScreen, drawMessage, isNight, parseDate, extractDepartures, extractStops, toRGB,
+    drawMain, drawSetupScreen, drawMessage, fitScale, isNight, parseDate, extractDepartures, extractStops, toRGB,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.BusPanel = api;

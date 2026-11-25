@@ -158,17 +158,32 @@ static inline void drawMain(Canvas& cv, const MainView& v) {
 }
 
 // ------------------------------------------------------------------ other screens
-static inline void drawSetupScreen(Canvas& cv, const char* ssid, const char* pass, const char* ip) {
-  char pw[32];
-  snprintf(pw, sizeof pw, "PW %s", pass);
-  drawCentered(cv, 2, "WIFI SETUP", C_AMBER, 1);
-  drawCentered(cv, 10, ssid, C_CLOCK, 1);
-  drawCentered(cv, 18, pw, C_CLOCK, 1);
-  drawCentered(cv, 26, ip, C_NEXT, 1);
+// Largest scale (2 or 1) at which s fits across the panel. Double size fits 8 characters.
+static inline int fitScale(const char* s) {
+  return textWidth(s, 2) <= PANEL_W ? 2 : 1;
 }
 
-// One line centered, or two lines when b is given.
+// Draw s centered in a 10 px tall row starting at y: double size when it fits,
+// otherwise normal size centered vertically in the row.
+static inline void drawFitted(Canvas& cv, int y, const char* s, uint16_t c) {
+  int k = fitScale(s);
+  drawCentered(cv, k == 2 ? y : y + 2, s, c, k);
+}
+
+// The setup network is open (no password), so the panel only names it.
+//   JOIN WIFI      (small, amber)
+//   BUSCLOCK       (network name, large when it fits)
+//   192.168.4.1    (small; too long for large text)
+static inline void drawSetupScreen(Canvas& cv, const char* ssid, const char* ip) {
+  drawCentered(cv, 2, "JOIN WIFI", C_AMBER, 1);
+  drawFitted(cv, 10, ssid, C_CLOCK);
+  drawCentered(cv, 25, ip, C_NEXT, 1);
+}
+
+// One line centered, or two lines when b is given. Lines of up to 8
+// characters are drawn at double size.
 static inline void drawMessage(Canvas& cv, const char* a, const char* b) {
-  drawCentered(cv, b ? 9 : 13, a, C_CLOCK, 1);
-  if (b) drawCentered(cv, 18, b, C_NEXT, 1);
+  if (!b) { drawFitted(cv, 11, a, C_CLOCK); return; }
+  drawFitted(cv, 4, a, C_CLOCK);
+  drawFitted(cv, 18, b, C_NEXT);
 }

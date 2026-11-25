@@ -13,8 +13,10 @@
   {"name": "waiting",          "screen": "main", "hour": 7,  "minute": 0,  "deps": [],          "fetchedAgo": null},
   {"name": "no stop",          "screen": "main", "hour": 7,  "minute": 0,  "deps": [],          "fetchedAgo": null, "hasStop": false},
   {"name": "walk 0",           "screen": "main", "hour": 18, "minute": 22, "deps": [60, 180],   "fetchedAgo": 1, "walk": 0},
-  {"name": "setup",            "screen": "setup", "ssid": "BusClock", "pass": "30303030", "ip": "192.168.4.1"},
-  {"name": "long ssid",        "screen": "setup", "ssid": "A-VERY-LONG-NETWORK-NAME", "pass": "30303030", "ip": "192.168.4.1"},
-  {"name": "connecting",       "screen": "message", "a": "CONNECTING", "b": "WIFI..."},
+  {"name": "setup",            "screen": "setup", "ssid": "BusClock", "ip": "192.168.4.1"},
+  {"name": "long ssid",        "screen": "setup", "ssid": "A-VERY-LONG-NETWORK-NAME", "ip": "192.168.4.1"},
+  {"name": "joining",          "screen": "message", "a": "JOINING", "b": "WIFI..."},
+  {"name": "setting clock",    "screen": "message", "a": "SETTING", "b": "CLOCK..."},
+  {"name": "too long to grow", "screen": "message", "a": "CONNECTING", "b": "OFFLINE"},
   {"name": "lowercase unknown","screen": "message", "a": "setting?", "b": null}
 ]

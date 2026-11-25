@@ -15,7 +15,7 @@ for (const s of scenarios) {
       fetched, hasStop: s.hasStop !== false, walk: s.walk ?? 4, maxAge: 180 });
     P.drawMain(fr, v);
   } else if (screen === "setup") {
-    P.drawSetupScreen(fr, s.ssid || "", s.pass || "", s.ip || "");
+    P.drawSetupScreen(fr, s.ssid || "", s.ip || "");
   } else {
     P.drawMessage(fr, s.a || "", s.b == null ? null : s.b);
   }

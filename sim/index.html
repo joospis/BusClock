@@ -145,8 +145,8 @@ function render() {
   frame.clear();
   const walk = Number($("walk").value);
   if (tab === "screens") {
-    if (screen === "setup") P.drawSetupScreen(frame, "BusClock", "30303030", "192.168.4.1");
-    else if (screen === "connecting") P.drawMessage(frame, "CONNECTING", "WIFI...");
+    if (screen === "setup") P.drawSetupScreen(frame, "BusClock", "192.168.4.1");
+    else if (screen === "connecting") P.drawMessage(frame, "JOINING", "WIFI...");
     else if (screen === "setting") P.drawMessage(frame, "SETTING", "CLOCK...");
     else P.drawMessage(frame, "WIFI", "OFFLINE");
   } else if (tab === "manual") {

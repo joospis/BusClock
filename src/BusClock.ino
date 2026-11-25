@@ -16,8 +16,8 @@
     - "ArduinoJson" by Benoit Blanchon, version 7.x
   Board: ESP32 Dev Module (classic ESP32 or ESP32-S3; not C3/C6)
 
-  First boot: the panel shows WIFI SETUP. On your phone, join the Wi-Fi network
-  "BusClock" (password 30303030). A setup page opens (or browse to
+  First boot: the panel shows JOIN WIFI / BUSCLOCK. On your phone, join the Wi-Fi network
+  "BusClock" (no password). A setup page opens (or browse to
   http://192.168.4.1). Pick your home Wi-Fi and your stop, then Save.
   Afterwards the same page is at http://busclock.local on your home network.
   Hold the BOOT button for 3 seconds at any time to bring the setup network back.
@@ -46,7 +46,6 @@
 
 // ------------------------------------------------------------------ settings
 #define AP_SSID      "BusClock"
-#define AP_PASS      "30303030"        // 8+ characters; shown on the panel during setup
 #define HOSTNAME     "busclock"        // http://busclock.local
 #define TZ_INFO      "EST5EDT,M3.2.0,M11.1.0"  // America/New_York
 #define BOOT_BUTTON  0                 // hold 3 s to open the setup network
@@ -270,7 +269,7 @@ void render() {
   panel->clearScreen();
 
   if (apActive && (!connected || forceSetup)) {
-    drawSetupScreen(panelCanvas, AP_SSID, AP_PASS, WiFi.softAPIP().toString().c_str());
+    drawSetupScreen(panelCanvas, AP_SSID, WiFi.softAPIP().toString().c_str());
   } else if (!timeValid()) {
     drawMessage(panelCanvas, connected ? "SETTING" : "WIFI", connected ? "CLOCK..." : "OFFLINE");
   } else {
@@ -491,7 +490,7 @@ void handleNotFound() {
 void startAP() {
   if (apActive) return;
   WiFi.mode(WIFI_AP_STA);
-  WiFi.softAP(AP_SSID, AP_PASS);
+  WiFi.softAP(AP_SSID);   // open network: no password to type during setup
   delay(100);
   dns.setErrorReplyCode(DNSReplyCode::NoError);
   dns.start(53, "*", WiFi.softAPIP());
@@ -591,7 +590,7 @@ void setup() {
     uint32_t t0 = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - t0 < 20000) {
       panel->clearScreen();
-      drawMessage(panelCanvas, "CONNECTING", "WIFI...");
+      drawMessage(panelCanvas, "JOINING", "WIFI...");
       panel->flipDMABuffer();
       delay(250);
     }

@@ -44,8 +44,8 @@ GPIO 12 is a boot-strapping pin. If the ESP32 won't boot while the panel is conn
 
 ## 3. Set up
 
-1. Power on. The panel shows **WIFI SETUP**.
-2. On your phone, join Wi-Fi **BusClock** (password **30303030**). The setup page opens automatically; if it doesn't, go to http://192.168.4.1.
+1. Power on. The panel shows **JOIN WIFI** and the network name **BUSCLOCK**.
+2. On your phone, join the open Wi-Fi network **BusClock** (no password). The setup page opens automatically; if it doesn't, go to http://192.168.4.1.
 3. Choose your home network and enter its password. Set your walk time and brightness, then tap **Save**.
 4. The clock restarts and joins your Wi-Fi. Open **http://busclock.local** from your home network and choose your stop and direction (the stop list comes from the bus tracker, so it only appears once the clock is online). Use the same page to change settings later. If that address doesn't resolve on your device, use the IP address shown on the status page.
 

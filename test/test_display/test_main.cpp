@@ -195,18 +195,59 @@ void test_draw_main_big_text_is_centered() {
   TEST_ASSERT_EQUAL_INT(33, maxX);
 }
 
-void test_other_screens_stay_on_panel() {
+// Height in rows of everything lit in color c.
+static int litHeight(const Buffer& b, uint16_t c) {
+  int top = -1, bottom = -1;
+  for (int y = 0; y < PANEL_H; y++)
+    for (int x = 0; x < PANEL_W; x++)
+      if (b.px[y][x] == c) { if (top < 0) top = y; bottom = y; }
+  return top < 0 ? 0 : bottom - top + 1;
+}
+
+void test_fit_scale() {
+  TEST_ASSERT_EQUAL_INT(2, fitScale("BUSCLOCK"));   // 8 chars = 62 px at 2x
+  TEST_ASSERT_EQUAL_INT(2, fitScale("CLOCK..."));
+  TEST_ASSERT_EQUAL_INT(1, fitScale("CONNECTI.")); // 9 chars = 70 px at 2x
+  TEST_ASSERT_EQUAL_INT(1, fitScale("192.168.4.1"));
+}
+
+void test_setup_screen() {
   Buffer b;
-  drawSetupScreen(b, "BusClock", "30303030", "192.168.4.1");
+  drawSetupScreen(b, "BusClock", "192.168.4.1");
   TEST_ASSERT_EQUAL_INT(0, b.outOfRange);
   TEST_ASSERT_TRUE(b.count(C_AMBER) > 0);
+  TEST_ASSERT_EQUAL_INT(10, litHeight(b, C_CLOCK));   // network name at double size
+  TEST_ASSERT_EQUAL_INT(5, litHeight(b, C_NEXT));     // IP stays small
+  Buffer longName;
+  drawSetupScreen(longName, "MY-LONG-NETWORK", "192.168.4.1");
+  TEST_ASSERT_EQUAL_INT(0, longName.outOfRange);
+  TEST_ASSERT_EQUAL_INT(5, litHeight(longName, C_CLOCK));  // falls back to small
+}
+
+void test_messages_are_large_when_they_fit() {
   Buffer m;
-  drawMessage(m, "CONNECTING", "WIFI...");
+  drawMessage(m, "JOINING", "WIFI...");
   TEST_ASSERT_EQUAL_INT(0, m.outOfRange);
-  TEST_ASSERT_TRUE(m.count(C_CLOCK) > 0 && m.count(C_NEXT) > 0);
+  TEST_ASSERT_EQUAL_INT(10, litHeight(m, C_CLOCK));
+  TEST_ASSERT_EQUAL_INT(10, litHeight(m, C_NEXT));
+  // the two lines don't touch
+  for (int y = 14; y < 18; y++) TEST_ASSERT_EQUAL_INT(0, m.lit(0, y, PANEL_W, y + 1));
+
   Buffer one;
   drawMessage(one, "HELLO", nullptr);
   TEST_ASSERT_EQUAL_INT(0, one.count(C_NEXT));
+  TEST_ASSERT_EQUAL_INT(10, litHeight(one, C_CLOCK));
+
+  Buffer longer;
+  drawMessage(longer, "CONNECTING", "WIFI...");
+  TEST_ASSERT_EQUAL_INT(0, longer.outOfRange);
+  TEST_ASSERT_EQUAL_INT(5, litHeight(longer, C_CLOCK));    // too wide for 2x
+}
+
+// Every message the firmware shows fits at double size.
+void test_firmware_messages_fit_large() {
+  const char* lines[] = {"JOINING", "WIFI...", "SETTING", "CLOCK...", "WIFI", "OFFLINE", "BusClock"};
+  for (const char* s : lines) TEST_ASSERT_EQUAL_INT_MESSAGE(2, fitScale(s), s);
 }
 
 int main() {
@@ -225,6 +266,9 @@ int main() {
   RUN_TEST(test_stale_data_dims_chevron_but_keeps_counting);
   RUN_TEST(test_draw_main_layout);
   RUN_TEST(test_draw_main_big_text_is_centered);
-  RUN_TEST(test_other_screens_stay_on_panel);
+  RUN_TEST(test_fit_scale);
+  RUN_TEST(test_setup_screen);
+  RUN_TEST(test_messages_are_large_when_they_fit);
+  RUN_TEST(test_firmware_messages_fit_large);
   return UNITY_END();
 }
