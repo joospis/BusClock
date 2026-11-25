@@ -16,8 +16,8 @@
     - "ArduinoJson" by Benoit Blanchon, version 7.x
   Board: ESP32 Dev Module (classic ESP32 or ESP32-S3; not C3/C6)
 
-  First boot: the panel shows WIFI SETUP. On your phone, join the Wi-Fi network
-  "BusClock" (password 30303030). A setup page opens (or browse to
+  First boot: the panel shows JOIN WIFI / BUSCLOCK. On your phone, join the Wi-Fi network
+  "BusClock" (no password). A setup page opens (or browse to
   http://192.168.4.1). Pick your home Wi-Fi and your stop, then Save.
   Afterwards the same page is at http://busclock.local on your home network.
   Hold the BOOT button for 3 seconds at any time to bring the setup network back.
@@ -41,10 +41,11 @@
 #include <ArduinoJson.h>
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 #include "live_parse.h"
+#include "logic.h"
+#include "display.h"
 
 // ------------------------------------------------------------------ settings
 #define AP_SSID      "BusClock"
-#define AP_PASS      "30303030"        // 8+ characters; shown on the panel during setup
 #define HOSTNAME     "busclock"        // http://busclock.local
 #define TZ_INFO      "EST5EDT,M3.2.0,M11.1.0"  // America/New_York
 #define BOOT_BUTTON  0                 // hold 3 s to open the setup network
@@ -77,22 +78,6 @@ static_assert(LIVE_INTERVAL_MS >= 30000UL, "Poll PVTA at most every 30 seconds")
 #define PIN_OE  15
 #define PIN_CLK 16
 
-#define PANEL_W 64
-#define PANEL_H 32
-
-// Colors (from the mockup). LEDs look brighter than a screen; tweak to taste.
-#define RGB565(r, g, b) (uint16_t)((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | ((b) >> 3))
-static const uint16_t C_CLOCK   = RGB565(0xDD, 0xDD, 0xDD);
-static const uint16_t C_LABEL   = RGB565(0xDD, 0xDD, 0xDD);
-static const uint16_t C_LINE    = RGB565(0x33, 0x33, 0x33);
-static const uint16_t C_CHEVRON = RGB565(0x77, 0x77, 0x77);   // live data
-static const uint16_t C_CHEV_OLD = RGB565(0x2A, 0x2A, 0x2A);  // showing cached data
-static const uint16_t C_NEXT    = RGB565(0x99, 0x99, 0x99);
-static const uint16_t C_DIM     = RGB565(0x77, 0x77, 0x77);
-static const uint16_t C_GREEN   = RGB565(0x33, 0xEE, 0x55);
-static const uint16_t C_AMBER   = RGB565(0xFF, 0xAA, 0x00);
-static const uint16_t C_RED     = RGB565(0xFF, 0x33, 0x33);
-
 // ------------------------------------------------------------------ state
 MatrixPanel_I2S_DMA* panel = nullptr;
 WebServer server(80);
@@ -124,61 +109,7 @@ int routeStopCount = 0;
 char towardN[LIVE_NAME_LEN] = "", towardS[LIVE_NAME_LEN] = "";
 uint32_t stopsLoadedAt = 0;        // millis() of the last successful load, 0 = never
 
-// "34:S" -> id 34, dir 'S'. Older saves used GTFS direction ids (0 = N, 1 = S).
-bool parseStopKey(const char* key, uint32_t* id, char* dir) {
-  char* end;
-  unsigned long v = strtoul(key, &end, 10);
-  if (end == key || *end != ':' || v == 0) return false;
-  char d = end[1];
-  if (d == '0') d = 'N';
-  else if (d == '1') d = 'S';
-  if ((d != 'N' && d != 'S') || end[2] != 0) return false;
-  *id = v; *dir = d;
-  return true;
-}
-
 String stopKey(uint32_t id, char dir) { return String(id) + ':' + dir; }
-
-// ------------------------------------------------------------------ font (3x5)
-static const char FONT_CHARS[] = " !-.:0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-static const uint8_t FONT[][5] = {
-  {0,0,0,0,0},{2,2,2,0,2},{0,0,7,0,0},{0,0,0,0,2},{0,2,0,2,0},           // space ! - . :
-  {7,5,5,5,7},{2,6,2,2,7},{7,1,7,4,7},{7,1,7,1,7},{5,5,7,1,1},           // 0-4
-  {7,4,7,1,7},{7,4,7,5,7},{7,1,2,2,2},{7,5,7,5,7},{7,5,7,1,7},           // 5-9
-  {2,5,7,5,5},{6,5,6,5,6},{3,4,4,4,3},{6,5,5,5,6},{7,4,6,4,7},{7,4,6,4,4}, // A-F
-  {3,4,5,5,3},{5,5,7,5,5},{7,2,2,2,7},{1,1,1,5,2},{5,5,6,5,5},{4,4,4,4,7}, // G-L
-  {5,7,7,5,5},{6,5,5,5,5},{2,5,5,5,2},{6,5,6,4,4},{2,5,5,6,3},{6,5,6,5,5}, // M-R
-  {3,4,2,1,6},{7,2,2,2,2},{5,5,5,5,7},{5,5,5,5,2},{5,5,7,7,5},{5,5,2,5,5}, // S-X
-  {5,5,2,2,2},{7,1,2,4,7}                                                  // Y Z
-};
-static const uint8_t CHEVRON[5] = {0x48, 0x24, 0x12, 0x24, 0x48};  // 7 px wide, ">>"
-
-void px(int x, int y, uint16_t c) {
-  if (x >= 0 && x < PANEL_W && y >= 0 && y < PANEL_H) panel->drawPixel(x, y, c);
-}
-
-int textWidth(const char* s, int k) {
-  int n = strlen(s);
-  return n ? n * 4 * k - k : 0;
-}
-
-void drawText(int x, int y, const char* s, uint16_t c, int k) {
-  for (; *s; s++) {
-    char ch = toupper((unsigned char)*s);
-    const char* p = strchr(FONT_CHARS, ch);
-    int g = p ? (int)(p - FONT_CHARS) : 0;
-    for (int r = 0; r < 5; r++)
-      for (int col = 0; col < 3; col++)
-        if (FONT[g][r] & (4 >> col))
-          for (int dy = 0; dy < k; dy++)
-            for (int dx = 0; dx < k; dx++) px(x + col * k + dx, y + r * k + dy, c);
-    x += 4 * k;
-  }
-}
-
-void drawCentered(int y, const char* s, uint16_t c, int k) {
-  drawText((PANEL_W - textWidth(s, k)) / 2, y, s, c, k);
-}
 
 // ------------------------------------------------------------------ departures
 // Next departures from the last bus tracker response that haven't left yet.
@@ -316,90 +247,21 @@ void liveTask(void*) {
 }
 
 // ------------------------------------------------------------------ screens
-uint16_t urgencyColor(long mins) {
-  if (mins < cfgWalk) return C_RED;        // you'd have to run
-  if (mins < cfgWalk + 3) return C_AMBER;  // time to head out
-  return C_GREEN;
-}
+// Drawing lives in display.h; this connects it to the real panel.
+struct PanelCanvas : Canvas {
+  void set(int x, int y, uint16_t c) override { panel->drawPixel(x, y, c); }
+} panelCanvas;
 
-void drawMain(time_t now) {
+void drawMainNow(time_t now) {
   struct tm lt;
   localtime_r(&now, &lt);
-
-  // Top section: rows 0-11, clock 10 px tall with 1 px above and below.
-  char clk[8];
-  snprintf(clk, sizeof clk, "%d:%02d", lt.tm_hour % 12 ? lt.tm_hour % 12 : 12, lt.tm_min);
-  drawCentered(1, clk, C_CLOCK, 2);
-
-  // Dividers
-  for (int x = 0; x < PANEL_W; x++) px(x, 12, C_LINE);
-  for (int y = 13; y < PANEL_H; y++) px(44, y, C_LINE);
-
   time_t dep[2], fetched;
   int n = getDepartures(now, dep, 2, &fetched);
-  bool fresh = fetched && now - fetched <= LIVE_MAX_AGE_S;
-
-  // Bottom left (44 x 19): big number + small label, centered as a group.
-  char big[6];
-  const char* unit;
-  uint16_t color;
-  if (!stopId) {
-    strcpy(big, "NO"); unit = "STOP"; color = C_DIM;
-  } else if (!fetched) {
-    strcpy(big, "--"); unit = ""; color = C_DIM;          // waiting for the first response
-  } else if (n == 0 && !fresh) {
-    strcpy(big, "NO"); unit = "DATA"; color = C_DIM;      // offline and cached buses have left
-  } else if (n == 0) {
-    strcpy(big, "NO"); unit = "BUS"; color = C_DIM;
-  } else {
-    long m = (long)(dep[0] - now) / 60;
-    if (m < 100) {
-      snprintf(big, sizeof big, "%ld", m); unit = "MIN"; color = urgencyColor(m);
-    } else {
-      long h = (m + 30) / 60; if (h > 99) h = 99;
-      snprintf(big, sizeof big, "%ld", h); unit = "HR"; color = C_GREEN;
-    }
-  }
-  int gw = textWidth(big, 3) + 4 + textWidth(unit, 1);
-  int gx = (44 - gw) / 2;
-  drawText(gx, 15, big, color, 3);
-  drawText(gx + textWidth(big, 3) + 4, 25, unit, C_LABEL, 1);
-
-  // Bottom right (19 x 19): chevron + the bus after next.
-  char nxt[6];
-  uint16_t nextColor = C_NEXT, chevColor = fresh ? C_CHEVRON : C_CHEV_OLD;
-  if (n >= 2) {
-    long m2 = (long)(dep[1] - now) / 60;
-    if (m2 < 100) snprintf(nxt, sizeof nxt, "%ldM", m2);
-    else snprintf(nxt, sizeof nxt, "%ldH", min((m2 + 30) / 60, 99L));
-  } else {
-    strcpy(nxt, "--");
-  }
-  for (int r = 0; r < 5; r++)
-    for (int c = 0; c < 7; c++)
-      if (CHEVRON[r] & (0x40 >> c)) px(51 + c, 16 + r, chevColor);
-  drawText(45 + (19 - textWidth(nxt, 1)) / 2, 24, nxt, nextColor, 1);
-}
-
-void drawSetupScreen() {
-  drawCentered(2, "WIFI SETUP", C_AMBER, 1);
-  drawCentered(10, AP_SSID, C_CLOCK, 1);
-  drawCentered(18, "PW " AP_PASS, C_CLOCK, 1);
-  drawCentered(26, WiFi.softAPIP().toString().c_str(), C_NEXT, 1);
-}
-
-void drawMessage(const char* a, const char* b) {
-  drawCentered(b ? 9 : 13, a, C_CLOCK, 1);
-  if (b) drawCentered(18, b, C_NEXT, 1);
+  MainInput in = {lt.tm_hour, lt.tm_min, now, dep, n, fetched, stopId != 0, cfgWalk, LIVE_MAX_AGE_S};
+  drawMain(panelCanvas, mainView(in));
 }
 
 bool timeValid() { return time(nullptr) > 1735689600; }  // after 2025-01-01
-
-bool isNight(int hour) {
-  if (cfgNightStart == cfgNightEnd) return false;
-  if (cfgNightStart < cfgNightEnd) return hour >= cfgNightStart && hour < cfgNightEnd;
-  return hour >= cfgNightStart || hour < cfgNightEnd;
-}
 
 void render() {
   bool connected = WiFi.status() == WL_CONNECTED;
@@ -407,15 +269,15 @@ void render() {
   panel->clearScreen();
 
   if (apActive && (!connected || forceSetup)) {
-    drawSetupScreen();
+    drawSetupScreen(panelCanvas, AP_SSID, WiFi.softAPIP().toString().c_str());
   } else if (!timeValid()) {
-    drawMessage(connected ? "SETTING" : "WIFI", connected ? "CLOCK..." : "OFFLINE");
+    drawMessage(panelCanvas, connected ? "SETTING" : "WIFI", connected ? "CLOCK..." : "OFFLINE");
   } else {
     time_t now = time(nullptr);
     struct tm lt;
     localtime_r(&now, &lt);
-    if (isNight(lt.tm_hour)) bri = cfgNightBri;
-    drawMain(now);
+    if (isNight(lt.tm_hour, cfgNightStart, cfgNightEnd)) bri = cfgNightBri;
+    drawMainNow(now);
   }
 
   if (bri != appliedBri) { panel->setBrightness8(bri); appliedBri = bri; }
@@ -628,7 +490,7 @@ void handleNotFound() {
 void startAP() {
   if (apActive) return;
   WiFi.mode(WIFI_AP_STA);
-  WiFi.softAP(AP_SSID, AP_PASS);
+  WiFi.softAP(AP_SSID);   // open network: no password to type during setup
   delay(100);
   dns.setErrorReplyCode(DNSReplyCode::NoError);
   dns.start(53, "*", WiFi.softAPIP());
@@ -728,7 +590,7 @@ void setup() {
     uint32_t t0 = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - t0 < 20000) {
       panel->clearScreen();
-      drawMessage("CONNECTING", "WIFI...");
+      drawMessage(panelCanvas, "JOINING", "WIFI...");
       panel->flipDMABuffer();
       delay(250);
     }
