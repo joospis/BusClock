@@ -1,8 +1,8 @@
-# BusClock: PVTA Route 30 countdown sign
+# BusClock: PVTA bus countdown sign
 
-ESP32 + 64×32 P5 HUB75 panel. Shows the time, minutes until the next Route 30 bus at your stop, and the bus after that.
+ESP32 + 64×32 P5 HUB75 panel. Shows the time, minutes until the next bus at your stop, and the bus after that, on any PVTA route. A badge in the route's color sits next to the clock, like the orange **30** for Route 30.
 
-Everything comes from PVTA's bus tracker (`bustracker.pvta.com/InfoPoint/rest/`): departures for your stop (`StopDepartures/Get/<stop>`), and the route's stop list (`RouteDetails/Get/30030`), which is reloaded daily. No timetable is stored on the ESP32, so schedule changes show up without re-flashing. The clock makes at most one request every 30 seconds. If the tracker can't be reached, it keeps counting down to the departures it last received and dims the **>>** icon after 3 minutes. The default stop is Puffton Village Apts, southbound (toward Old Belchertown Rd).
+Everything comes from PVTA's bus tracker (`bustracker.pvta.com/InfoPoint/rest/`): departures for your stop (`StopDepartures/Get/<stop>`), and the route's name and colors for the badge (`RouteDetails/Get/<route>`), re-checked daily. The setup page loads the route and stop lists straight from the tracker in your phone's browser. No timetable is stored on the ESP32, so schedule changes show up without re-flashing. The clock makes at most one request every 30 seconds. If the tracker can't be reached, it keeps counting down to the departures it last received and dims the **>>** icon after 3 minutes. Until you choose, it uses Route 30 at Puffton Village Apts, southbound (toward Old Belchertown Rd).
 
 ```
 platformio.ini            build, flash and test settings
@@ -47,13 +47,13 @@ GPIO 12 is a boot-strapping pin. If the ESP32 won't boot while the panel is conn
 1. Power on. The panel shows **JOIN WIFI** and the network name **BUSCLOCK**.
 2. On your phone, join the open Wi-Fi network **BusClock** (no password). The setup page opens automatically; if it doesn't, go to http://192.168.4.1.
 3. Choose your home network and enter its password. Set your walk time and brightness, then tap **Save**.
-4. The clock restarts and joins your Wi-Fi. Open **http://busclock.local** from your home network and choose your stop and direction (the stop list comes from the bus tracker, so it only appears once the clock is online). Use the same page to change settings later. If that address doesn't resolve on your device, use the IP address shown on the status page.
+4. The clock restarts and joins your Wi-Fi. Open **http://busclock.local** from your home network and choose your route, then your stop and direction. The route and stop lists load from the bus tracker in your phone's browser, so the phone needs internet access. On the clock's own setup network they won't load, and your saved choice is kept. Use the same page to change settings later. If that address doesn't resolve on your device, use the IP address shown on the status page.
 
 Hold the ESP32's **BOOT** button for 3 seconds to reopen the setup network. If your Wi-Fi goes down, the panel alternates between the countdown (4 seconds, using the last departures it received) and **WIFI OFFLINE** (2 seconds). After 10 minutes without Wi-Fi it also reopens the setup network; the panel switches to the setup screen once a phone joins it.
 
-**Colors:** green means you have time, amber means leave now, and red means you'd have to run. The thresholds are based on your walk time. **HR** means the next bus is more than 99 minutes away. **NO BUS** means the bus tracker lists no upcoming Route 30 buses at your stop (for example, overnight). **NO DATA** means the tracker hasn't been reachable and every bus it last reported has left. **--** means the first response hasn't arrived yet.
+**Colors:** green means you have time, amber means leave now, and red means you'd have to run. The thresholds are based on your walk time. **HR** means the next bus is more than 99 minutes away. **NO BUS** means the bus tracker lists no upcoming buses on your route at your stop (for example, overnight). **NO DATA** means the tracker hasn't been reachable and every bus it last reported has left. **--** means the first response hasn't arrived yet.
 
-To use a different route, change `ROUTE_ID` (InfoPoint's route id, e.g. 30030 for Route 30) and `ROUTE_NAME` at the top of the sketch.
+Directions come from the tracker as they are: most routes run N/S or E/W, and the UMass campus shuttles (34, 35) use UP/DWN.
 
 ## 4. Tests
 
@@ -69,8 +69,8 @@ The parity check renders every scenario in `tools/parity/scenarios.json` with bo
 
 Open `sim/index.html` in a browser (double-clicking the file works; no server needed). It draws the panel with the same code and colors as the firmware.
 
-- **Live**: real departures from the PVTA bus tracker for any stop on the route, polled every 30 seconds like the clock. Set **Connection** to *Internet down* to watch the **>>** dim while the countdown keeps going on cached data, or *Wi-Fi down* to see it alternate with **WIFI OFFLINE**.
-- **Manual**: set the next two buses, data age and clock time by hand to check colors and edge cases.
+- **Live**: real departures from the PVTA bus tracker for any route and stop, with the route badge, polled every 30 seconds like the clock. Set **Connection** to *Internet down* to watch the **>>** dim while the countdown keeps going on cached data, or *Wi-Fi down* to see it alternate with **WIFI OFFLINE**.
+- **Manual**: set the next two buses, data age, clock time and route badge by hand to check colors and edge cases.
 - **Other screens**: Wi-Fi setup, connecting and clock-sync screens.
 
 The walk time and brightness sliders work like the setup page's.

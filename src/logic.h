@@ -2,19 +2,61 @@
 #pragma once
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
-// "34:S" -> id 34, dir 'S'. Older saves used GTFS direction ids (0 = N, 1 = S).
+// Direction codes are short uppercase strings from the bus tracker: N, S, E, W,
+// UP, DWN, CW, CCW... DIR_LEN holds up to 4 characters plus the terminator.
+#define DIR_LEN 5
+
+// "34:S" -> id 34, dir "S"; "40:UP" -> id 40, dir "UP". Older saves used GTFS
+// direction ids, so "34:0" / "34:1" read as N / S. dir must hold DIR_LEN chars.
 static inline bool parseStopKey(const char* key, uint32_t* id, char* dir) {
   if (!key) return false;
   char* end;
   unsigned long v = strtoul(key, &end, 10);
   if (end == key || *end != ':' || v == 0 || v > 0xFFFFFFFFUL) return false;
-  char d = end[1];
-  if (d == '0') d = 'N';
-  else if (d == '1') d = 'S';
-  if ((d != 'N' && d != 'S') || end[2] != 0) return false;
+  const char* d = end + 1;
+  char out[DIR_LEN];
+  if (d[0] == '0' && d[1] == 0) { out[0] = 'N'; out[1] = 0; }
+  else if (d[0] == '1' && d[1] == 0) { out[0] = 'S'; out[1] = 0; }
+  else {
+    int n = 0;
+    for (; d[n]; n++) {
+      if (n >= DIR_LEN - 1 || d[n] < 'A' || d[n] > 'Z') return false;
+      out[n] = d[n];
+    }
+    if (n == 0) return false;
+    out[n] = 0;
+  }
   *id = (uint32_t)v;
-  *dir = d;
+  memcpy(dir, out, DIR_LEN);
+  return true;
+}
+
+// Does a departure's DirectionCode belong to the stop's direction? Exact match,
+// or a one-letter code standing for a longer one ("U" for "UP").
+static inline bool dirMatches(const char* code, const char* dir) {
+  if (!code || !dir || !code[0] || !dir[0]) return false;
+  if (strcmp(code, dir) == 0) return true;
+  return code[1] == 0 && code[0] == dir[0];
+}
+
+// "FBB033" or "#fbb033" -> 0xFBB033. Returns false unless it's exactly 6 hex digits.
+static inline bool parseHexColor(const char* s, uint32_t* rgb) {
+  if (!s) return false;
+  if (*s == '#') s++;
+  uint32_t v = 0;
+  for (int i = 0; i < 6; i++) {
+    char c = s[i];
+    int d;
+    if (c >= '0' && c <= '9') d = c - '0';
+    else if (c >= 'a' && c <= 'f') d = c - 'a' + 10;
+    else if (c >= 'A' && c <= 'F') d = c - 'A' + 10;
+    else return false;
+    v = v << 4 | (uint32_t)d;
+  }
+  if (s[6] != 0) return false;
+  *rgb = v;
   return true;
 }
 

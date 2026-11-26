@@ -6,6 +6,7 @@
 #include <sstream>
 #include <vector>
 #include "display.h"
+#include "logic.h"
 
 struct Frame : Canvas {
   uint16_t px[PANEL_H][PANEL_W] = {};
@@ -26,8 +27,10 @@ int main(int argc, char** argv) {
       std::vector<time_t> deps;
       for (JsonVariant d : s["deps"].as<JsonArray>()) deps.push_back(now + d.as<long>());
       time_t fetched = s["fetchedAgo"].isNull() ? 0 : now - s["fetchedAgo"].as<long>();
-      MainInput in = {s["hour"] | 0, s["minute"] | 0, now, deps.data(), (int)deps.size(),
-                      fetched, s["hasStop"] | true, s["walk"] | 4, 180};
+      uint32_t bg = 0;
+      parseHexColor(s["routeColor"] | "000000", &bg);
+      MainInput in = {s["hour"] | 0, s["minute"] | 0, s["route"] | "", rgb565(bg),
+                      now, deps.data(), (int)deps.size(), fetched, s["hasStop"] | true, s["walk"] | 4, 180};
       drawMain(fr, mainView(in));
     } else if (screen == "setup") {
       drawSetupScreen(fr, s["ssid"] | "", s["ip"] | "");

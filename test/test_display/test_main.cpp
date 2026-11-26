@@ -29,7 +29,7 @@ struct Buffer : Canvas {
 static const time_t NOW = 1795640000;
 
 static MainInput input(const time_t* dep, int n, time_t fetched = NOW - 10) {
-  MainInput in = {16, 13, NOW, dep, n, fetched, true, 4, 180};
+  MainInput in = {16, 13, nullptr, 0, NOW, dep, n, fetched, true, 4, 180};
   return in;
 }
 
@@ -182,6 +182,160 @@ void test_draw_main_layout() {
   TEST_ASSERT_TRUE(b.count(C_NEXT, 45, 13, 64, 32) > 0);
 }
 
+static const uint16_t ORANGE = RGB565(0xFB, 0xB0, 0x33);
+
+// Columns that contain any pixel of color c in rows y0..y1-1.
+static void colRange(const Buffer& b, uint16_t c, int y0, int y1, int* minX, int* maxX) {
+  *minX = 99; *maxX = -1;
+  for (int y = y0; y < y1; y++)
+    for (int x = 0; x < PANEL_W; x++)
+      if (b.px[y][x] == c) { if (x < *minX) *minX = x; if (x > *maxX) *maxX = x; }
+}
+
+void test_rgb565_conversion() {
+  TEST_ASSERT_EQUAL_UINT16(ORANGE, rgb565(0xFBB033));
+  TEST_ASSERT_EQUAL_UINT16(0xFFFF, rgb565(0xFFFFFF));
+  TEST_ASSERT_EQUAL_UINT16(0, rgb565(0x000000));
+  TEST_ASSERT_EQUAL_UINT16(0xF800, rgb565(0xFF0000));
+}
+
+void test_badge_width() {
+  TEST_ASSERT_EQUAL_INT(11, badgeWidth("3"));      // never narrower than it is tall
+  TEST_ASSERT_EQUAL_INT(13, badgeWidth("30"));     // 7 px text + 3 px each side
+  TEST_ASSERT_EQUAL_INT(17, badgeWidth("R41"));
+  TEST_ASSERT_EQUAL_INT(21, badgeWidth("G101"));
+}
+
+void test_badge_is_filled_square_with_cutout_text() {
+  time_t d[1] = {NOW + 600};
+  MainInput in = input(d, 1);
+  in.route = "30"; in.routeColor = ORANGE;
+  Buffer b;
+  drawMain(b, mainView(in));
+  // laid out for the widest clock: badge 13 + gap 3 + 38 = 54 px, centered,
+  // so x 5..17 is the badge, with "30" cut out of it in black
+  int lit = b.count(ORANGE, 5, 0, 18, 11);
+  Buffer glyphs;
+  drawText(glyphs, 0, 0, "30", 1, 1);
+  TEST_ASSERT_EQUAL_INT(13 * 11 - glyphs.lit(), lit);
+  TEST_ASSERT_EQUAL_INT(lit, b.count(ORANGE));     // nothing orange outside it
+  TEST_ASSERT_EQUAL_UINT16(0, b.px[3][8]);         // top-left of "3" is black (cut out)
+  for (int x = 5; x < 8; x++) TEST_ASSERT_EQUAL_UINT16(ORANGE, b.px[5][x]);    // 3 px padding left
+  for (int x = 15; x < 18; x++) TEST_ASSERT_EQUAL_UINT16(ORANGE, b.px[5][x]);  // and right
+}
+
+// Leftmost and rightmost lit columns in the top section.
+static void topExtent(const Buffer& b, int* minX, int* maxX) {
+  *minX = 99; *maxX = -1;
+  for (int y = 0; y < 12; y++)
+    for (int x = 0; x < PANEL_W; x++)
+      if (b.px[y][x]) { if (x < *minX) *minX = x; if (x > *maxX) *maxX = x; }
+}
+
+void test_badge_stays_put_and_clock_centered_in_its_cell() {
+  time_t d[1] = {NOW + 600};
+  const char* routes[] = {"7", "30", "B43", "G101"};
+  for (const char* r : routes) {
+    int bw = badgeWidth(r);
+    int x0 = (PANEL_W - (bw + BADGE_GAP + CLOCK_MAX_W)) / 2;
+    int cell = x0 + bw + BADGE_GAP;
+    TEST_ASSERT_EQUAL_INT_MESSAGE(x0, PANEL_W - (cell + CLOCK_MAX_W), r);   // equal outer margins
+    TEST_ASSERT_TRUE_MESSAGE(x0 >= 1, r);
+    for (int h = 0; h < 24; h++) {               // "12:xx" (widest) through "1:xx" (narrowest)
+      MainInput in = input(d, 1);
+      in.route = r; in.routeColor = ORANGE;
+      in.hour = h; in.minute = 59;
+      Buffer b;
+      drawMain(b, mainView(in));
+      int minX, maxX;
+      colRange(b, ORANGE, 0, 11, &minX, &maxX);
+      TEST_ASSERT_EQUAL_INT_MESSAGE(x0, minX, r);            // badge never moves
+      TEST_ASSERT_EQUAL_INT_MESSAGE(x0 + bw - 1, maxX, r);
+      colRange(b, C_CLOCK, 0, 12, &minX, &maxX);             // time inside its cell, centered
+      int before = minX - cell, after = cell + CLOCK_MAX_W - 1 - maxX;
+      TEST_ASSERT_TRUE_MESSAGE(before >= 0 && after >= 0, r);
+      TEST_ASSERT_TRUE_MESSAGE(before == after || before + 1 == after, r);
+    }
+  }
+}
+
+// Columns inside [x0, x1) of rows 0-10 that contain an unlit pixel.
+static void holeRange(const Buffer& b, int x0, int x1, int* minX, int* maxX) {
+  *minX = 99; *maxX = -1;
+  for (int y = 0; y < BADGE_H; y++)
+    for (int x = x0; x < x1; x++)
+      if (b.px[y][x] == 0) { if (x < *minX) *minX = x; if (x > *maxX) *maxX = x; }
+}
+
+void test_badge_text_color() {
+  // cut out (unlit) on every route color PVTA uses, including the dark ones...
+  const uint32_t cutout[] = {0xFBB033, 0xEF4E91, 0x00AEEC, 0x00A94E, 0xFF0000, 0x00467E, 0x7E0A6D,
+                             0x27276E, 0xFFDD15, 0x808080, 0x404040};
+  for (uint32_t c : cutout) TEST_ASSERT_EQUAL_UINT16_MESSAGE(0, badgeTextColor(rgb565(c)), "should be cut out");
+  // ...except a badge too dark to show a hole, like X90's black
+  const uint32_t dark[] = {0x000000, 0x3F3F3F, 0x10203F};
+  for (uint32_t c : dark) TEST_ASSERT_EQUAL_UINT16_MESSAGE(C_CLOCK, badgeTextColor(rgb565(c)), "should be drawn");
+}
+
+void test_black_badge_draws_the_number() {
+  time_t d[1] = {NOW + 600};
+  MainInput in = input(d, 1);
+  in.route = "X90"; in.routeColor = 0;
+  Buffer b;
+  drawMain(b, mainView(in));
+  int x0 = (PANEL_W - (badgeWidth("X90") + BADGE_GAP + CLOCK_MAX_W)) / 2;
+  Buffer glyphs;
+  drawText(glyphs, 0, 0, "X90", 1, 1);
+  TEST_ASSERT_EQUAL_INT(glyphs.lit(), b.count(C_CLOCK, x0, 0, x0 + badgeWidth("X90"), BADGE_H));
+}
+
+void test_badge_cutout_and_clock_moves_right() {
+  time_t d[1] = {NOW + 600};
+  MainInput in = input(d, 1);
+  in.hour = 12; in.minute = 59;                 // widest clock, 38 px
+  const uint16_t GREEN = RGB565(0x00, 0xA9, 0x4E);
+  in.route = "G101"; in.routeColor = GREEN;
+  Buffer b;
+  drawMain(b, mainView(in));
+  TEST_ASSERT_EQUAL_INT(0, b.outOfRange);
+  int minX, maxX;
+  // badge 21 + gap 3 + clock 38 = 62 px, centered: badge x 1..21, clock x 25..62
+  colRange(b, GREEN, 0, BADGE_H, &minX, &maxX);
+  TEST_ASSERT_EQUAL_INT(1, minX);
+  TEST_ASSERT_EQUAL_INT(21, maxX);
+  holeRange(b, 1, 22, &minX, &maxX);            // number cut out, 3 px in from the badge edges
+  TEST_ASSERT_EQUAL_INT(4, minX);
+  TEST_ASSERT_EQUAL_INT(18, maxX);
+  Buffer glyphs;
+  drawText(glyphs, 0, 0, "G101", 1, 1);
+  TEST_ASSERT_EQUAL_INT(21 * BADGE_H - glyphs.lit(), b.count(GREEN, 1, 0, 22, BADGE_H));
+  colRange(b, C_CLOCK, 0, 12, &minX, &maxX);
+  TEST_ASSERT_EQUAL_INT(25, minX);
+  TEST_ASSERT_EQUAL_INT(62, maxX);
+}
+
+void test_no_badge_keeps_clock_centered() {
+  time_t d[1] = {NOW + 600};
+  MainInput in = input(d, 1);                   // route = nullptr
+  Buffer b;
+  drawMain(b, mainView(in));
+  int minX, maxX;
+  colRange(b, C_CLOCK, 0, 12, &minX, &maxX);    // "4:13" is 30 px: (64-30)/2 = 17
+  TEST_ASSERT_EQUAL_INT(17, minX);
+  TEST_ASSERT_EQUAL_INT(46, maxX);
+  in.route = "";
+  Buffer e;
+  drawMain(e, mainView(in));
+  TEST_ASSERT_EQUAL_MEMORY(b.px, e.px, sizeof b.px);
+}
+
+void test_badge_name_truncated_to_four() {
+  time_t d[1] = {NOW + 600};
+  MainInput in = input(d, 1);
+  in.route = "ABCDEFG";
+  TEST_ASSERT_EQUAL_STRING("ABCD", mainView(in).route);
+}
+
 void test_draw_main_big_text_is_centered() {
   time_t d[1] = {NOW + 7 * 60};
   Buffer b;
@@ -266,6 +420,15 @@ int main() {
   RUN_TEST(test_stale_data_dims_chevron_but_keeps_counting);
   RUN_TEST(test_draw_main_layout);
   RUN_TEST(test_draw_main_big_text_is_centered);
+  RUN_TEST(test_rgb565_conversion);
+  RUN_TEST(test_badge_width);
+  RUN_TEST(test_badge_is_filled_square_with_cutout_text);
+  RUN_TEST(test_badge_text_color);
+  RUN_TEST(test_black_badge_draws_the_number);
+  RUN_TEST(test_badge_cutout_and_clock_moves_right);
+  RUN_TEST(test_badge_stays_put_and_clock_centered_in_its_cell);
+  RUN_TEST(test_no_badge_keeps_clock_centered);
+  RUN_TEST(test_badge_name_truncated_to_four);
   RUN_TEST(test_fit_scale);
   RUN_TEST(test_setup_screen);
   RUN_TEST(test_messages_are_large_when_they_fit);
