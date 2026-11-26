@@ -18,8 +18,9 @@ button.sec{background:#2a2a2a;color:#eee}
 .row{display:flex;gap:8px;align-items:end}.row>*{flex:1}
 .st{font-size:14px;line-height:1.7}.warn{color:#ff6b6b}.ok{color:#5ee27a}
 #msg{margin:10px 0;font-size:14px;min-height:20px}
+.badge{display:inline-block;min-width:28px;padding:2px 6px;border-radius:4px;font-weight:700;text-align:center;font-size:14px}
 </style></head><body>
-<h1>BusClock</h1><p class="sub">Route <span id="route"></span> countdown sign</p>
+<h1>BusClock</h1><p class="sub"><span class="badge" id="badge"></span> countdown sign</p>
 <fieldset><legend>Status</legend><div class="st" id="status">Loading…</div></fieldset>
 <form id="f">
 <fieldset><legend>Wi-Fi</legend>
@@ -31,8 +32,12 @@ button.sec{background:#2a2a2a;color:#eee}
 <input id="pass" name="pass" type="password" placeholder="Leave blank to keep the saved one">
 </fieldset>
 <fieldset><legend>Bus stop</legend>
+<label for="routeSel">Route</label><select id="routeSel"></select>
 <label for="stop">Your stop and direction</label><select id="stop" name="stop"></select>
 <p class="sub" id="stopNote" style="margin:4px 0 0"></p>
+<input type="hidden" id="route" name="route"><input type="hidden" id="rname" name="rname">
+<input type="hidden" id="rcolor" name="rcolor">
+<input type="hidden" id="stopname" name="stopname">
 <label for="walk">Walk to the stop: <b id="walkV"></b> min</label>
 <input type="range" id="walk" name="walk" min="0" max="20">
 <p class="sub" style="margin:4px 0 0">The countdown turns amber when it's time to leave and red when you'd have to run.</p>
@@ -56,27 +61,67 @@ const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',
 function opt(sel,v,t){const o=document.createElement('option');o.value=v;o.textContent=t;sel.appendChild(o);}
 for(const s of ['nstart','nend'])for(let h=0;h<24;h++)opt($(s),h,((h%12)||12)+(h<12?' AM':' PM'));
 for(const id of ['walk','bri','nbri'])$(id).oninput=()=>$(id+'V').textContent=$(id).value;
-let stopsShown=false;
-function fillStops(c,sel){
-  if(c.stops.length)stopsShown=true;
-  $('stop').innerHTML='';
-  opt($('stop'),'','Choose your stop…');
-  for(const s of c.stops)opt($('stop'),s.key,s.name+' → '+s.toward);
-  if(sel&&!c.stops.some(s=>s.key==sel))opt($('stop'),sel,sel==c.stop?(c.stopLabel||sel):sel);
-  $('stop').value=sel;
-  $('stopNote').textContent=c.stops.length?'':'The stop list loads from the PVTA bus tracker once the clock is on your Wi-Fi.';
+// Route and stop lists come straight from PVTA's bus tracker (it allows
+// browser requests), so they only load while this phone is online.
+const PVTA='https://bustracker.pvta.com/InfoPoint/rest/';
+let routes=[];
+// Like the panel: the number is cut out (dark) unless the badge is too dark to show it.
+function showBadge(name,bg){const b=$('badge'),v=parseInt(bg,16)||0,max=Math.max(v>>16,(v>>8)&255,v&255);b.textContent=name;b.style.background='#'+bg;b.style.color=max<64?'#ddd':'#111';}
+function setRoute(id,name,bg){$('route').value=id;$('rname').value=name;$('rcolor').value=bg;showBadge(name,bg);}
+const offlineNote='Route and stop lists load from the PVTA bus tracker while this phone is online. Your saved choice is kept.';
+async function getJson(path){const r=await fetch(PVTA+path);if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}
+// RouteDetails -> stops in route order, minus each direction's last stop (buses end there)
+function routeStops(d){
+  const names=new Map((d.Stops||[]).map(s=>[s.StopId,s.Name||'']));
+  const rs=(d.RouteStops||[]).filter(r=>/^[A-Z]{1,4}$/.test(r.Direction||'')).sort((a,b)=>a.SortOrder-b.SortOrder);
+  const toward={},last={};
+  rs.forEach((r,i)=>{toward[r.Direction]=names.get(r.StopId);last[r.Direction]=i;});
+  return rs.filter((r,i)=>i!==last[r.Direction]&&names.get(r.StopId)).map(r=>({key:r.StopId+':'+r.Direction,name:names.get(r.StopId),toward:toward[r.Direction]}));
 }
-async function reloadStops(){
-  const c=await (await fetch('/api/config')).json();
-  fillStops(c,$('stop').value);   // keep whatever is selected now
+async function loadStops(routeId,sel,selName){
+  $('stop').innerHTML='';opt($('stop'),'','Loading stops…');
+  try{
+    const stops=routeStops(await getJson('RouteDetails/Get/'+routeId));
+    $('stop').innerHTML='';opt($('stop'),'','Choose your stop…');
+    for(const s of stops)opt($('stop'),s.key,s.name+' → '+s.toward);
+    $('stop').value=stops.some(s=>s.key==sel)?sel:'';
+    $('stopNote').textContent='';
+  }catch(e){
+    $('stop').innerHTML='';
+    if(sel)opt($('stop'),sel,selName||sel);else opt($('stop'),'','Choose your stop…');
+    $('stopNote').textContent=offlineNote;
+  }
+  stopChanged();
+}
+function stopChanged(){const o=$('stop').selectedOptions[0];$('stopname').value=o&&o.value?o.textContent.replace(' → ',' toward '):'';}
+$('stop').onchange=stopChanged;
+$('routeSel').onchange=()=>{
+  const r=routes.find(x=>String(x.RouteId)==$('routeSel').value);
+  if(!r)return;
+  setRoute(r.RouteId,r.ShortName,r.Color);
+  loadStops(r.RouteId,'','');
+};
+async function loadRoutes(c){
+  const sel=$('routeSel');
+  sel.innerHTML='';opt(sel,c.route,c.routeName+' (loading routes…)');
+  try{
+    routes=(await getJson('Routes/GetVisibleRoutes')).filter(r=>r.IsVisible!==false).sort((a,b)=>a.SortOrder-b.SortOrder);
+    sel.innerHTML='';
+    for(const r of routes)opt(sel,r.RouteId,r.ShortName+' · '+r.LongName);
+    if(!routes.some(r=>r.RouteId==c.route))opt(sel,c.route,c.routeName);
+    sel.value=c.route;
+  }catch(e){
+    sel.innerHTML='';opt(sel,c.route,c.routeName);
+  }
+  await loadStops(c.route,c.stop,c.stopName);
 }
 async function loadConfig(){
   const c=await (await fetch('/api/config')).json();
-  $('route').textContent=c.route;
-  fillStops(c,c.stop);
+  setRoute(c.route,c.routeName,c.routeColor);
   $('ssid').value=c.ssid;
   for(const k of ['walk','bri','nbri','nstart','nend','driver'])$(k).value=c[k];
   for(const id of ['walk','bri','nbri'])$(id+'V').textContent=$(id).value;
+  loadRoutes(c);
 }
 async function scan(){
   $('ssidSel').innerHTML='<option value="">Scanning…</option>';
@@ -93,7 +138,7 @@ async function status(){
     const s=await (await fetch('/api/status')).json();
     let h='Wi-Fi: '+(s.connected?'<span class=ok>connected to '+esc(s.ssid)+'</span> ('+s.ip+')':'<span class=warn>not connected</span>')+'<br>';
     h+='Time: '+(s.time||'not set yet')+'<br>';
-    h+='Stop: '+(s.stop?esc(s.stop):'<span class=warn>not chosen</span>')+'<br>';
+    h+='Stop: '+(s.stop?'Route '+esc(s.route)+', '+esc(s.stop):'<span class=warn>not chosen</span>')+'<br>';
     if(s.stop)h+='Next buses: '+(s.next.length?s.next.map(m=>m+' min').join(', '):'none in the next few days')+'<br>';
     if(s.stop){
       const age=s.liveAge<0?'':s.liveAge<120?s.liveAge+' s ago':Math.round(s.liveAge/60)+' min ago';
@@ -101,7 +146,6 @@ async function status(){
       if(s.liveError)h+=' <span class=warn>('+esc(s.liveError)+')</span>';
     }
     $('status').innerHTML=h;
-    if(s.stopsLoaded&&!stopsShown){stopsShown=true;reloadStops();}
   }catch(e){}
 }
 $('f').onsubmit=async e=>{

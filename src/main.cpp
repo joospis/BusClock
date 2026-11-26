@@ -50,17 +50,21 @@
 #define HOSTNAME     "busclock"        // http://busclock.local
 #define TZ_INFO      "EST5EDT,M3.2.0,M11.1.0"  // America/New_York
 #define BOOT_BUTTON  0                 // hold 3 s to open the setup network
-#define DEFAULT_STOP "34:S"            // Puffton Village Apts, southbound (toward Old Belchertown Rd)
 
-// PVTA InfoPoint (bus tracker). Stop keys are "<StopId>:<N|S>".
-#define ROUTE_ID         30030         // InfoPoint's id for Route 30 (not the GTFS route_id)
-#define ROUTE_NAME       "30"
+// Defaults until a route and stop are chosen on the setup page: Route 30 at
+// Puffton Village Apts, southbound. Route ids are InfoPoint's (30030), not GTFS's.
+#define DEFAULT_ROUTE_ID    30030
+#define DEFAULT_ROUTE_NAME  "30"
+#define DEFAULT_ROUTE_COLOR 0xFBB033   // PVTA's orange for Route 30
+#define DEFAULT_STOP        "34:S"     // stop keys are "<StopId>:<N|S>"
+#define DEFAULT_STOP_NAME   "Puffton Village Apts toward Old Belchertown Road"
+
+// PVTA InfoPoint (bus tracker)
 #define LIVE_BASE        "https://bustracker.pvta.com/InfoPoint/rest/"
 #define LIVE_INTERVAL_MS 30000UL       // minimum time between requests to PVTA
 static_assert(LIVE_INTERVAL_MS >= 30000UL, "Poll PVTA at most every 30 seconds");
 #define LIVE_MAX_AGE_S   180           // after this long without fresh data, dim the >> icon
-#define STOPS_REFRESH_MS (24UL * 3600 * 1000)  // reload the stop list daily
-#define MAX_STOPS        64
+#define ROUTE_REFRESH_MS (24UL * 3600 * 1000)  // re-check the route's name and colors daily
 
 // HUB75 wiring (ESP32 GPIO numbers). These are the library's defaults for a
 // classic ESP32 dev board. A 64x32 1/16-scan panel doesn't use the E line.
@@ -85,12 +89,20 @@ WebServer server(80);
 DNSServer dns;
 Preferences prefs;
 
-String cfgSsid, cfgPass, cfgStop;
+String cfgSsid, cfgPass, cfgStop, cfgStopName, cfgRouteName;
+uint32_t cfgRoute = DEFAULT_ROUTE_ID, cfgRouteColor = DEFAULT_ROUTE_COLOR;
 uint8_t cfgWalk = 4, cfgBri = 128, cfgNightBri = 20, cfgNightStart = 23, cfgNightEnd = 7, cfgDriver = 0;
 
-// The chosen stop, parsed from cfgStop (guarded by liveMux).
+// The chosen route and stop, parsed from the config (guarded by liveMux).
+uint32_t routeId = DEFAULT_ROUTE_ID;
 uint32_t stopId = 0;   // 0 = none chosen
-char stopDir = 'S';
+char stopDir[DIR_LEN] = "S";
+
+// Route badge as drawn (guarded by liveMux). Starts from the saved config and
+// is refreshed from PVTA daily in case the route's colors change.
+char badgeName[LIVE_ROUTE_NAME_LEN] = DEFAULT_ROUTE_NAME;
+uint16_t badgeColor = 0;
+uint32_t routeLoadedAt = 0;        // millis() of the last successful route refresh, 0 = never
 bool timeValid();
 bool apActive = false, forceSetup = false, mdnsStarted = false, wasConnected = false;
 uint32_t staConnectedAt = 0, apStartedAt = 0, lastStaTry = 0, disconnectedSince = 0, bootPressedAt = 0, restartAt = 0;
@@ -103,14 +115,7 @@ int liveCount = 0;
 time_t liveFetchedAt = 0;          // last successful fetch (epoch seconds)
 char liveError[48] = "";
 
-// Route stop list from InfoPoint (guarded by stopsLock)
-SemaphoreHandle_t stopsLock = nullptr;
-LiveStop routeStops[MAX_STOPS];
-int routeStopCount = 0;
-char towardN[LIVE_NAME_LEN] = "", towardS[LIVE_NAME_LEN] = "";
-uint32_t stopsLoadedAt = 0;        // millis() of the last successful load, 0 = never
-
-String stopKey(uint32_t id, char dir) { return String(id) + ':' + dir; }
+String stopKey(uint32_t id, const char* dir) { return String(id) + ':' + dir; }
 
 // ------------------------------------------------------------------ departures
 // Next departures from the last bus tracker response that haven't left yet.
@@ -130,18 +135,19 @@ int getDepartures(time_t now, time_t* out, int maxOut, time_t* fetched) {
 }
 
 // "Puffton Village Apts toward Old Belchertown Road" for the status page.
-String stopLabel(uint32_t id, char dir) {
-  String s;
-  if (stopsLock && xSemaphoreTake(stopsLock, pdMS_TO_TICKS(200))) {
-    for (int i = 0; i < routeStopCount; i++)
-      if (routeStops[i].id == id && routeStops[i].dir == dir) {
-        s = String(routeStops[i].name) + " toward " + (dir == 'N' ? towardN : towardS);
-        break;
-      }
-    xSemaphoreGive(stopsLock);
-  }
-  if (s.length() == 0) s = "Stop " + String(id) + (dir == 'N' ? " northbound" : " southbound");
-  return s;
+String stopLabel() {
+  if (!stopId) return "";
+  if (cfgStopName.length()) return cfgStopName;
+  return "Stop " + String(stopId) + " (" + stopDir + ")";
+}
+
+// Copy the saved route name and colors into the badge.
+void applyRouteBadge() {
+  portENTER_CRITICAL(&liveMux);
+  strncpy(badgeName, cfgRouteName.c_str(), sizeof badgeName - 1);
+  badgeName[sizeof badgeName - 1] = 0;
+  badgeColor = rgb565(cfgRouteColor);
+  portEXIT_CRITICAL(&liveMux);
 }
 
 void setLiveError(const char* msg) {
@@ -176,10 +182,10 @@ bool fetchJson(const String& path, JsonDocument& filter, JsonDocument& doc) {
 }
 
 void fetchDepartures() {
-  uint32_t id;
-  char dir;
+  uint32_t id, route;
+  char dir[DIR_LEN];
   portENTER_CRITICAL(&liveMux);
-  id = stopId; dir = stopDir;
+  id = stopId; memcpy(dir, stopDir, DIR_LEN); route = routeId;
   portEXIT_CRITICAL(&liveMux);
   if (!id) return;
 
@@ -189,9 +195,9 @@ void fetchDepartures() {
 
   time_t now = time(nullptr);
   time_t found[8];
-  int n = live_extract(doc, ROUTE_ID, dir, now, found, 8);
+  int n = live_extract(doc, route, dir, now, found, 8);
   portENTER_CRITICAL(&liveMux);
-  if (id == stopId && dir == stopDir) {   // ignore if the stop changed meanwhile
+  if (id == stopId && strcmp(dir, stopDir) == 0 && route == routeId) {   // ignore if the choice changed meanwhile
     memcpy(liveDeps, found, sizeof(time_t) * n);
     liveCount = n;
     liveFetchedAt = now;
@@ -200,28 +206,34 @@ void fetchDepartures() {
   portEXIT_CRITICAL(&liveMux);
 }
 
-void fetchStops() {
-  JsonDocument filter, doc;
-  live_buildStopsFilter(filter);
-  if (!fetchJson("RouteDetails/Get/" + String(ROUTE_ID), filter, doc)) return;
+// Refresh the badge's name and colors from PVTA (they rarely change).
+void fetchRoute() {
+  uint32_t route;
+  portENTER_CRITICAL(&liveMux);
+  route = routeId;
+  portEXIT_CRITICAL(&liveMux);
 
-  static LiveStop found[MAX_STOPS];
-  int n = live_extractStops(doc, found, MAX_STOPS);
-  if (n == 0) { setLiveError("empty stop list"); return; }
-  xSemaphoreTake(stopsLock, portMAX_DELAY);
-  memcpy(routeStops, found, sizeof(LiveStop) * n);
-  routeStopCount = n;
-  strncpy(towardN, live_towardName(doc, 'N'), LIVE_NAME_LEN - 1);
-  strncpy(towardS, live_towardName(doc, 'S'), LIVE_NAME_LEN - 1);
-  stopsLoadedAt = millis() | 1;
-  xSemaphoreGive(stopsLock);
-  Serial.printf("Loaded %d stops for route %s\n", n, ROUTE_NAME);
+  JsonDocument filter, doc;
+  live_buildRouteFilter(filter);
+  if (!fetchJson("RouteDetails/Get/" + String(route), filter, doc)) return;
+  LiveRoute r;
+  if (!live_extractRoute(doc, &r)) { setLiveError("unknown route"); return; }
+  uint32_t bg;
+  bool okBg = parseHexColor(r.color, &bg);
+  portENTER_CRITICAL(&liveMux);
+  if (route == routeId) {
+    memcpy(badgeName, r.name, sizeof badgeName);
+    if (okBg) badgeColor = rgb565(bg);
+    routeLoadedAt = millis() | 1;
+  }
+  portEXIT_CRITICAL(&liveMux);
+  Serial.printf("Route %s: color %s\n", r.name, r.color);
 }
 
 // Runs on its own so a slow HTTPS request never freezes the clock or setup page.
 // This is the only place that contacts PVTA, and it makes at most one request
-// per LIVE_INTERVAL_MS (30 s), counting failed attempts. When the stop list
-// needs (re)loading it takes every other slot, so departures stay current.
+// per LIVE_INTERVAL_MS (30 s), counting failed attempts. When the route badge
+// needs refreshing it takes every other slot, so departures stay current.
 void liveTask(void*) {
   uint32_t last = 0;
   bool attempted = false, lastWasDeps = false;
@@ -230,13 +242,13 @@ void liveTask(void*) {
     if (allowed && WiFi.status() == WL_CONNECTED && timeValid()) {
       attempted = true;
       last = millis();
-      bool needStops = !stopsLoadedAt || millis() - stopsLoadedAt > STOPS_REFRESH_MS;
+      bool needRoute = !routeLoadedAt || millis() - routeLoadedAt > ROUTE_REFRESH_MS;
       bool haveStop;
       portENTER_CRITICAL(&liveMux);
       haveStop = stopId != 0;
       portEXIT_CRITICAL(&liveMux);
-      if (needStops && (lastWasDeps || !haveStop)) {
-        fetchStops();
+      if (needRoute && (lastWasDeps || !haveStop)) {
+        fetchRoute();
         lastWasDeps = false;
       } else {
         fetchDepartures();
@@ -258,7 +270,13 @@ void drawMainNow(time_t now) {
   localtime_r(&now, &lt);
   time_t dep[2], fetched;
   int n = getDepartures(now, dep, 2, &fetched);
-  MainInput in = {lt.tm_hour, lt.tm_min, now, dep, n, fetched, stopId != 0, cfgWalk, LIVE_MAX_AGE_S};
+  char route[LIVE_ROUTE_NAME_LEN];
+  uint16_t bg;
+  portENTER_CRITICAL(&liveMux);
+  memcpy(route, badgeName, sizeof route);
+  bg = badgeColor;
+  portEXIT_CRITICAL(&liveMux);
+  MainInput in = {lt.tm_hour, lt.tm_min, route, bg, now, dep, n, fetched, stopId != 0, cfgWalk, LIVE_MAX_AGE_S};
   drawMain(panelCanvas, mainView(in));
 }
 
@@ -295,6 +313,10 @@ void loadConfig() {
   cfgSsid = prefs.getString("ssid", "");
   cfgPass = prefs.getString("pass", "");
   cfgStop = prefs.getString("stop", DEFAULT_STOP);
+  cfgStopName = prefs.getString("stopname", cfgStop == DEFAULT_STOP ? DEFAULT_STOP_NAME : "");
+  cfgRoute = prefs.getUInt("route", DEFAULT_ROUTE_ID);
+  cfgRouteName = prefs.getString("rname", DEFAULT_ROUTE_NAME);
+  cfgRouteColor = prefs.getUInt("rcolor", DEFAULT_ROUTE_COLOR);
   cfgWalk = prefs.getUChar("walk", 4);
   cfgBri = prefs.getUChar("bri", 128);
   cfgNightBri = prefs.getUChar("nbri", 20);
@@ -302,8 +324,10 @@ void loadConfig() {
   cfgNightEnd = prefs.getUChar("nend", 7);
   cfgDriver = prefs.getUChar("driver", 0);
   prefs.end();
-  if (!parseStopKey(cfgStop.c_str(), &stopId, &stopDir)) stopId = 0;
+  if (!parseStopKey(cfgStop.c_str(), &stopId, stopDir)) stopId = 0;
   else cfgStop = stopKey(stopId, stopDir);   // normalize old "34:1" keys to "34:S"
+  routeId = cfgRoute;
+  applyRouteBadge();
 }
 
 void saveConfig() {
@@ -311,6 +335,10 @@ void saveConfig() {
   prefs.putString("ssid", cfgSsid);
   prefs.putString("pass", cfgPass);
   prefs.putString("stop", cfgStop);
+  prefs.putString("stopname", cfgStopName);
+  prefs.putUInt("route", cfgRoute);
+  prefs.putString("rname", cfgRouteName);
+  prefs.putUInt("rcolor", cfgRouteColor);
   prefs.putUChar("walk", cfgWalk);
   prefs.putUChar("bri", cfgBri);
   prefs.putUChar("nbri", cfgNightBri);
@@ -337,22 +365,19 @@ String jsonEscape(const String& s) {
 
 void handleRoot() { server.send_P(200, "text/html", INDEX_HTML); }
 
+String hex6(uint32_t rgb) {
+  char b[8];
+  snprintf(b, sizeof b, "%06lX", (unsigned long)(rgb & 0xFFFFFF));
+  return String(b);
+}
+
 void handleConfig() {
-  String j = "{\"route\":\"" ROUTE_NAME "\",\"ssid\":\"" + jsonEscape(cfgSsid) +
-             "\",\"stop\":\"" + jsonEscape(cfgStop) + "\",\"stopLabel\":\"" +
-             (stopId ? jsonEscape(stopLabel(stopId, stopDir)) : String("")) + "\",\"walk\":" + cfgWalk +
-             ",\"bri\":" + cfgBri + ",\"nbri\":" + cfgNightBri + ",\"nstart\":" + cfgNightStart +
-             ",\"nend\":" + cfgNightEnd + ",\"driver\":" + cfgDriver + ",\"stops\":[";
-  if (xSemaphoreTake(stopsLock, pdMS_TO_TICKS(500))) {
-    for (int i = 0; i < routeStopCount; i++) {
-      const LiveStop& s = routeStops[i];
-      if (i) j += ',';
-      j += "{\"key\":\"" + stopKey(s.id, s.dir) + "\",\"name\":\"" + jsonEscape(s.name) +
-           "\",\"toward\":\"" + jsonEscape(s.dir == 'N' ? towardN : towardS) + "\"}";
-    }
-    xSemaphoreGive(stopsLock);
-  }
-  j += "]}";
+  String j = "{\"ssid\":\"" + jsonEscape(cfgSsid) + "\"";
+  j += ",\"route\":" + String(cfgRoute) + ",\"routeName\":\"" + jsonEscape(cfgRouteName) + "\"";
+  j += ",\"routeColor\":\"" + hex6(cfgRouteColor) + "\"";
+  j += ",\"stop\":\"" + jsonEscape(cfgStop) + "\",\"stopName\":\"" + jsonEscape(stopLabel()) + "\"";
+  j += ",\"walk\":" + String(cfgWalk) + ",\"bri\":" + cfgBri + ",\"nbri\":" + cfgNightBri;
+  j += ",\"nstart\":" + String(cfgNightStart) + ",\"nend\":" + cfgNightEnd + ",\"driver\":" + cfgDriver + "}";
   server.send(200, "application/json", j);
 }
 
@@ -362,7 +387,7 @@ void handleStatus() {
   j += ",\"ssid\":\"" + jsonEscape(connected ? WiFi.SSID() : cfgSsid) + "\"";
   j += ",\"ip\":\"" + (connected ? WiFi.localIP().toString() : String("")) + "\"";
   j += ",\"stop\":\"";
-  if (stopId) j += jsonEscape(stopLabel(stopId, stopDir));
+  j += jsonEscape(stopLabel());
   j += "\",\"time\":\"";
   String next = "";
   time_t fetched = 0;
@@ -385,7 +410,7 @@ void handleStatus() {
   j += ",\"liveAge\":" + String(fetched ? (long)(time(nullptr) - fetched) : -1L);
   j += ",\"maxAge\":" + String(LIVE_MAX_AGE_S);
   j += ",\"liveError\":\"" + jsonEscape(String(err)) + "\"";
-  j += ",\"stopsLoaded\":" + String(stopsLoadedAt ? "true" : "false") + "}";
+  j += ",\"route\":\"" + jsonEscape(cfgRouteName) + "\"}";
   server.send(200, "application/json", j);
 }
 
@@ -435,20 +460,40 @@ void handleSave() {
     cfgPass = newPass; wifiChanged = true;                      // same network, new password
   }
 
+  // Route: the page sends PVTA's id, short name and colors together. Ignore it
+  // unless all of them are valid (e.g. the page couldn't reach PVTA).
+  uint32_t newRoute = cfgRoute, rgbBg;
+  String rname = server.arg("rname");
+  long r = server.arg("route").toInt();
+  if (r > 0 && rname.length() > 0 && rname.length() < LIVE_ROUTE_NAME_LEN &&
+      parseHexColor(server.arg("rcolor").c_str(), &rgbBg)) {
+    newRoute = (uint32_t)r;
+    cfgRouteName = rname; cfgRouteColor = rgbBg;
+  }
+
   uint32_t newId = 0;
-  char newDir = 'S';
+  char newDir[DIR_LEN] = "S";
   String newStop = server.arg("stop");
-  if (newStop.length() == 0) cfgStop = "";
-  else if (parseStopKey(newStop.c_str(), &newId, &newDir)) cfgStop = stopKey(newId, newDir);
-  else newId = stopId, newDir = stopDir;   // malformed: keep the current stop
+  if (newStop.length() == 0) { cfgStop = ""; cfgStopName = ""; }
+  else if (parseStopKey(newStop.c_str(), &newId, newDir)) {
+    cfgStop = stopKey(newId, newDir);
+    if (server.hasArg("stopname")) cfgStopName = server.arg("stopname").substring(0, 100);
+  }
+  else { newId = stopId; memcpy(newDir, stopDir, DIR_LEN); }   // malformed: keep the current stop
   if (cfgStop.length() == 0) newId = 0;
+
+  bool routeChanged = newRoute != cfgRoute;
+  cfgRoute = newRoute;
   portENTER_CRITICAL(&liveMux);
-  if (newId != stopId || newDir != stopDir) {
-    liveCount = 0; liveFetchedAt = 0; liveError[0] = 0;   // old stop's data no longer applies
+  if (newId != stopId || strcmp(newDir, stopDir) != 0 || routeChanged) {
+    liveCount = 0; liveFetchedAt = 0; liveError[0] = 0;   // old data no longer applies
   }
   stopId = newId;
-  stopDir = newDir;
+  memcpy(stopDir, newDir, DIR_LEN);
+  routeId = newRoute;
+  if (routeChanged) routeLoadedAt = 0;   // refresh the badge from PVTA soon
   portEXIT_CRITICAL(&liveMux);
+  applyRouteBadge();
 
   cfgWalk = argByte("walk", cfgWalk, 0, 30);
   cfgBri = argByte("bri", cfgBri, 1, 255);
@@ -570,7 +615,6 @@ void setupPanel() {
 
 void setup() {
   Serial.begin(115200);
-  stopsLock = xSemaphoreCreateMutex();
   pinMode(BOOT_BUTTON, INPUT_PULLUP);
   loadConfig();
   setupPanel();

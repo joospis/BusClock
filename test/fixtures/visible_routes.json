@@ -1,0 +1,515 @@
+[
+ {
+  "RouteId": 20101,
+  "ShortName": "G101",
+  "LongName": "Five Town Plaza-Sumner-Union Station",
+  "Color": "00A94E",
+  "TextColor": "ffffff",
+  "IsVisible": true,
+  "SortOrder": 0
+ },
+ {
+  "RouteId": 20102,
+  "ShortName": "G102",
+  "LongName": "Chicopee Big Y-Chicopee Ctr-Union Statio",
+  "Color": "00A94E",
+  "TextColor": "ffffff",
+  "IsVisible": true,
+  "SortOrder": 1
+ },
+ {
+  "RouteId": 20002,
+  "ShortName": "G2",
+  "LongName": "Carew-East Springfield / Belmont-Dwight ",
+  "Color": "00A94E",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 2
+ },
+ {
+  "RouteId": 20003,
+  "ShortName": "G3",
+  "LongName": "Spfld Plaza via Liberty / King-Westford",
+  "Color": "00A94E",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 3
+ },
+ {
+  "RouteId": 20004,
+  "ShortName": "B4",
+  "LongName": "Plainfield Street",
+  "Color": "00467E",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 4
+ },
+ {
+  "RouteId": 20005,
+  "ShortName": "G5",
+  "LongName": "Dickinson-Jewish Home-Longmeadow",
+  "Color": "00A94E",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 5
+ },
+ {
+  "RouteId": 20006,
+  "ShortName": "B6",
+  "LongName": "Ludlow via Bay St",
+  "Color": "00467E",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 6
+ },
+ {
+  "RouteId": 20007,
+  "ShortName": "B7",
+  "LongName": "Wilbraham Big Y-State St-Boston Rd",
+  "Color": "00467E",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 7
+ },
+ {
+  "RouteId": 20010,
+  "ShortName": "R10",
+  "LongName": "Westfield/West Springfield via Route 20",
+  "Color": "FF0000",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 9
+ },
+ {
+  "RouteId": 20011,
+  "ShortName": "P11",
+  "LongName": "Holyoke Community College Express",
+  "Color": "7E0A6D",
+  "TextColor": "ffffff",
+  "IsVisible": true,
+  "SortOrder": 10
+ },
+ {
+  "RouteId": 20012,
+  "ShortName": "B12",
+  "LongName": "Stonybrook Express",
+  "Color": "00467E",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 11
+ },
+ {
+  "RouteId": 20014,
+  "ShortName": "R14",
+  "LongName": "Feeding Hills-Springfield",
+  "Color": "FF0000",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 12
+ },
+ {
+  "RouteId": 20017,
+  "ShortName": "B17",
+  "LongName": "Wilbraham Big Y-Worthington St-Wilbraham",
+  "Color": "00467E",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 13
+ },
+ {
+  "RouteId": 20019,
+  "ShortName": "G19",
+  "LongName": "Holyoke-Montcalm-Chicopee",
+  "Color": "00A94E",
+  "TextColor": "ffffff",
+  "IsVisible": true,
+  "SortOrder": 14
+ },
+ {
+  "RouteId": 20020,
+  "ShortName": "P20",
+  "LongName": "Holyoke-Springfield via Holyoke Mall",
+  "Color": "7E0A6D",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 15
+ },
+ {
+  "RouteId": 20021,
+  "ShortName": "P21",
+  "LongName": "Holyoke-Springfield via Chicopee",
+  "Color": "7E0A6D",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 16
+ },
+ {
+  "RouteId": 20921,
+  "ShortName": "921",
+  "LongName": "Holyoke-Springfield Express via I-391",
+  "Color": "7E0A6D",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 17
+ },
+ {
+  "RouteId": 20022,
+  "ShortName": "R22",
+  "LongName": "Holyoke-Grattan-Chicopee",
+  "Color": "FF0000",
+  "TextColor": "ffffff",
+  "IsVisible": true,
+  "SortOrder": 18
+ },
+ {
+  "RouteId": 20023,
+  "ShortName": "B23",
+  "LongName": "Holyoke-Westfield via HCC",
+  "Color": "00467E",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 19
+ },
+ {
+  "RouteId": 20024,
+  "ShortName": "R24",
+  "LongName": "HTC-Holyoke Hospital-Holyoke Mall",
+  "Color": "FF0000",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 20
+ },
+ {
+  "RouteId": 20029,
+  "ShortName": "R29",
+  "LongName": "Holyoke-South Hadley",
+  "Color": "FF0000",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 21
+ },
+ {
+  "RouteId": 30030,
+  "ShortName": "30",
+  "LongName": "North Amherst / Old Belchertown Rd",
+  "Color": "FBB033",
+  "TextColor": "000000",
+  "IsVisible": true,
+  "SortOrder": 22
+ },
+ {
+  "RouteId": 30031,
+  "ShortName": "31",
+  "LongName": "Sunderland / South Amherst",
+  "Color": "EF4E91",
+  "TextColor": "000000",
+  "IsVisible": true,
+  "SortOrder": 23
+ },
+ {
+  "RouteId": 30033,
+  "ShortName": "33",
+  "LongName": "Puffers Pond / Stop and Shop",
+  "Color": "00AEEC",
+  "TextColor": "000000",
+  "IsVisible": true,
+  "SortOrder": 24
+ },
+ {
+  "RouteId": 30034,
+  "ShortName": "34",
+  "LongName": "Campus Shuttle Northbound",
+  "Color": "00467E",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 25
+ },
+ {
+  "RouteId": 30035,
+  "ShortName": "35",
+  "LongName": "Campus Shuttle Southbound",
+  "Color": "00467E",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 26
+ },
+ {
+  "RouteId": 30038,
+  "ShortName": "38",
+  "LongName": "Mount Holyoke / UMass",
+  "Color": "7E0A6D",
+  "TextColor": "ffffff",
+  "IsVisible": true,
+  "SortOrder": 27
+ },
+ {
+  "RouteId": 30938,
+  "ShortName": "938",
+  "LongName": "Mount Holyoke / UMass - No School",
+  "Color": "7E0A6D",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 28
+ },
+ {
+  "RouteId": 10939,
+  "ShortName": "939",
+  "LongName": "Smith-Mount Holyoke Express",
+  "Color": "7E0A6D",
+  "TextColor": "ffffff",
+  "IsVisible": true,
+  "SortOrder": 30
+ },
+ {
+  "RouteId": 10041,
+  "ShortName": "R41",
+  "LongName": "Northampton-Easthampton-HCC-Holyoke Mall",
+  "Color": "FF0000",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 31
+ },
+ {
+  "RouteId": 10042,
+  "ShortName": "R42",
+  "LongName": "Northampton-Williamsburg",
+  "Color": "FF0000",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 32
+ },
+ {
+  "RouteId": 10043,
+  "ShortName": "B43",
+  "LongName": "Northampton-Hadley-Amherst",
+  "Color": "00467E",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 33
+ },
+ {
+  "RouteId": 10943,
+  "ShortName": "943",
+  "LongName": "Northampton-Amherst Express",
+  "Color": "00467E",
+  "TextColor": "ffffff",
+  "IsVisible": true,
+  "SortOrder": 34
+ },
+ {
+  "RouteId": 10044,
+  "ShortName": "R44",
+  "LongName": "Florence Heights via King St/Bridge Rd",
+  "Color": "FF0000",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 35
+ },
+ {
+  "RouteId": 30045,
+  "ShortName": "45",
+  "LongName": "Belchertown Center / UMass",
+  "Color": "00A94E",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 36
+ },
+ {
+  "RouteId": 30046,
+  "ShortName": "46",
+  "LongName": "Whately / S. Deerfield / UMass",
+  "Color": "00A94E",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 37
+ },
+ {
+  "RouteId": 10047,
+  "ShortName": "G47",
+  "LongName": "Northampton-Westfield-Southwick",
+  "Color": "00A94E",
+  "TextColor": "ffffff",
+  "IsVisible": true,
+  "SortOrder": 38
+ },
+ {
+  "RouteId": 10048,
+  "ShortName": "B48",
+  "LongName": "Northampton-Holyoke via Route 5",
+  "Color": "00467E",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 39
+ },
+ {
+  "RouteId": 30079,
+  "ShortName": "B79",
+  "LongName": "Amherst-Worcester Intercity Service",
+  "Color": "00467E",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 40
+ },
+ {
+  "RouteId": 10049,
+  "ShortName": "B49",
+  "LongName": "Holyoke-Ware",
+  "Color": "00467E",
+  "TextColor": "ffffff",
+  "IsVisible": true,
+  "SortOrder": 40
+ },
+ {
+  "RouteId": 20073,
+  "ShortName": "G73",
+  "LongName": "Springfield-Northampton Express",
+  "Color": "00A94E",
+  "TextColor": "ffffff",
+  "IsVisible": true,
+  "SortOrder": 41
+ },
+ {
+  "RouteId": 20090,
+  "ShortName": "X90",
+  "LongName": "Inner Crosstown",
+  "Color": "000000",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 43
+ },
+ {
+  "RouteId": 20092,
+  "ShortName": "X92",
+  "LongName": "Mid City Crosstown",
+  "Color": "000000",
+  "TextColor": "FFFFFF",
+  "IsVisible": true,
+  "SortOrder": 44
+ },
+ {
+  "RouteId": 20094,
+  "ShortName": "X94",
+  "LongName": "Outer Crosstown",
+  "Color": "000000",
+  "TextColor": "ffffff",
+  "IsVisible": true,
+  "SortOrder": 45
+ },
+ {
+  "RouteId": 10904,
+  "ShortName": "904",
+  "LongName": "Pittsfield-Northampton",
+  "Color": "27276e",
+  "TextColor": "ffffff",
+  "IsVisible": true,
+  "SortOrder": 50
+ },
+ {
+  "RouteId": 20801,
+  "ShortName": "801",
+  "LongName": "Tripper 1 Helper Service",
+  "Color": "FFDD15",
+  "TextColor": "000000",
+  "IsVisible": true,
+  "SortOrder": 801
+ },
+ {
+  "RouteId": 20802,
+  "ShortName": "802",
+  "LongName": "Tripper 2 Helper Service",
+  "Color": "ffdd15",
+  "TextColor": "000000",
+  "IsVisible": true,
+  "SortOrder": 802
+ },
+ {
+  "RouteId": 20803,
+  "ShortName": "803",
+  "LongName": "Tripper 3 Helper Service",
+  "Color": "ffdd15",
+  "TextColor": "000000",
+  "IsVisible": true,
+  "SortOrder": 803
+ },
+ {
+  "RouteId": 20804,
+  "ShortName": "804",
+  "LongName": "Tripper 4 Helper Service",
+  "Color": "ffdd15",
+  "TextColor": "000000",
+  "IsVisible": true,
+  "SortOrder": 804
+ },
+ {
+  "RouteId": 20805,
+  "ShortName": "805",
+  "LongName": "Tripper 5 Helper Service",
+  "Color": "ffdd15",
+  "TextColor": "000000",
+  "IsVisible": true,
+  "SortOrder": 805
+ },
+ {
+  "RouteId": 20806,
+  "ShortName": "806",
+  "LongName": "Tripper 6 Helper Service",
+  "Color": "ffdd15",
+  "TextColor": "000000",
+  "IsVisible": true,
+  "SortOrder": 806
+ },
+ {
+  "RouteId": 20820,
+  "ShortName": "820",
+  "LongName": "Tripper 20 Helper Service",
+  "Color": "ffdd15",
+  "TextColor": "000000",
+  "IsVisible": true,
+  "SortOrder": 820
+ },
+ {
+  "RouteId": 20821,
+  "ShortName": "821",
+  "LongName": "Tripper 21 Helper Service",
+  "Color": "ffdd15",
+  "TextColor": "000000",
+  "IsVisible": true,
+  "SortOrder": 821
+ },
+ {
+  "RouteId": 20823,
+  "ShortName": "823",
+  "LongName": "Tripper 23 Helper Service",
+  "Color": "ffdd15",
+  "TextColor": "000000",
+  "IsVisible": true,
+  "SortOrder": 823
+ },
+ {
+  "RouteId": 20824,
+  "ShortName": "824",
+  "LongName": "Tripper 24 Helper Service",
+  "Color": "ffdd15",
+  "TextColor": "000000",
+  "IsVisible": true,
+  "SortOrder": 824
+ },
+ {
+  "RouteId": 20892,
+  "ShortName": "892",
+  "LongName": "Tripper 92 Helper Service",
+  "Color": "ffdd15",
+  "TextColor": "000000",
+  "IsVisible": true,
+  "SortOrder": 892
+ },
+ {
+  "RouteId": 30666,
+  "ShortName": "666",
+  "LongName": "To/From Bus Garage",
+  "Color": "808080",
+  "TextColor": "ffffff",
+  "IsVisible": true,
+  "SortOrder": 900
+ }
+]

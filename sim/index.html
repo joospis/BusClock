@@ -51,6 +51,7 @@
 
   <section class="card" data-panel="live">
     <div class="grid">
+      <div><label for="route">Route</label><select id="route"><option>Loading routes…</option></select></div>
       <div><label for="stop">Stop and direction</label><select id="stop"><option>Loading stops…</option></select></div>
       <div><label for="net">Connection</label>
         <select id="net">
@@ -73,6 +74,8 @@
           <option value="never">Never received</option>
         </select></div>
       <div><label for="clock">Clock</label><input id="clock" type="time" value="16:13"></div>
+      <div><label for="mRoute">Route badge (blank = none)</label><input id="mRoute" value="30" maxlength="7"></div>
+      <div><label for="mColor">Badge color</label><input id="mColor" type="color" value="#fbb033" style="height:38px;padding:2px"></div>
       <div><label class="check" style="margin-top:26px"><input type="checkbox" id="hasStop" checked> Stop configured</label></div>
     </div>
   </section>
@@ -101,12 +104,14 @@ const P = window.BusPanel;
 const $ = (id) => document.getElementById(id);
 
 // Same constants as the firmware
-const ROUTE_ID = 30030, LIVE_BASE = "https://bustracker.pvta.com/InfoPoint/rest/";
+const DEFAULT_ROUTE = { id: 30030, name: "30", color: "FBB033" };
+const LIVE_BASE = "https://bustracker.pvta.com/InfoPoint/rest/";
 const LIVE_INTERVAL_MS = 30000, LIVE_MAX_AGE_S = 180, TZ = "America/New_York";
 const DEFAULT_STOP = "34:S";
 
 let tab = "live", screen = "setup";
-const live = { stopKey: DEFAULT_STOP, deps: [], fetched: 0, error: "", lastTry: 0, stops: [], wifiDownAt: 0 };
+const live = { route: DEFAULT_ROUTE, routes: [], stopKey: DEFAULT_STOP, deps: [], fetched: 0, error: "", lastTry: 0, stops: [], wifiDownAt: 0 };
+const color565 = (hex) => P.rgb565(P.parseHexColor(hex) ?? 0);
 
 // ---------------------------------------------------------------- drawing
 const cv = $("panel"), ctx = cv.getContext("2d");
@@ -159,7 +164,9 @@ function render() {
     const [hh, mm] = ($("clock").value || "16:13").split(":").map(Number);
     const dep = [$("m1").value, $("m2").value].filter((v) => v !== "").map((m) => now + Number(m) * 60).sort((a, b) => a - b);
     const age = $("age").value;
-    P.drawMain(frame, P.mainView({ hour: hh, minute: mm, now, dep, fetched: age === "never" ? 0 : now - Number(age),
+    P.drawMain(frame, P.mainView({ hour: hh, minute: mm, route: $("mRoute").value.trim(),
+      routeColor: color565($("mColor").value),
+      now, dep, fetched: age === "never" ? 0 : now - Number(age),
       hasStop: $("hasStop").checked, walk, maxAge: LIVE_MAX_AGE_S }));
   } else {
     const nowMs = Date.now(), now = Math.floor(nowMs / 1000);
@@ -171,7 +178,9 @@ function render() {
     } else {
       const { hour, minute } = nyTime(nowMs);
       const dep = live.deps.filter((t) => t >= now).slice(0, 2);   // getDepartures()
-      P.drawMain(frame, P.mainView({ hour, minute, now, dep, fetched: live.fetched, hasStop: !!live.stopKey, walk, maxAge: LIVE_MAX_AGE_S }));
+      const r = live.route;
+      P.drawMain(frame, P.mainView({ hour, minute, route: r.name, routeColor: color565(r.color),
+        now, dep, fetched: live.fetched, hasStop: !!live.stopKey, walk, maxAge: LIVE_MAX_AGE_S }));
     }
     liveStatus(now);
   }
@@ -185,31 +194,54 @@ async function getJson(path) {
   return r.json();
 }
 
+function fillSelect(sel, items, value) {
+  sel.innerHTML = "";
+  for (const [v, t] of items) {
+    const o = document.createElement("option");
+    o.value = v;
+    o.textContent = t;
+    sel.appendChild(o);
+  }
+  sel.value = value;
+}
+
+async function loadRoutes() {
+  try {
+    const all = await getJson("Routes/GetVisibleRoutes");
+    live.routes = all.filter((r) => r.IsVisible !== false).sort((a, b) => a.SortOrder - b.SortOrder)
+      .map((r) => ({ id: r.RouteId, name: r.ShortName, long: r.LongName, color: r.Color }));
+    fillSelect($("route"), live.routes.map((r) => [r.id, r.name + " · " + r.long]), live.route.id);
+  } catch (e) {
+    fillSelect($("route"), [[DEFAULT_ROUTE.id, "30 (couldn't load routes: " + e.message + ")"]], DEFAULT_ROUTE.id);
+  }
+}
+
 async function loadStops() {
   try {
-    live.stops = P.extractStops(await getJson("RouteDetails/Get/" + ROUTE_ID));
-    const sel = $("stop");
-    sel.innerHTML = "";
-    for (const s of live.stops) {
-      const o = document.createElement("option");
-      o.value = s.id + ":" + s.dir;
-      o.textContent = s.name + " → " + s.toward;
-      sel.appendChild(o);
-    }
-    sel.value = live.stopKey;
+    live.stops = P.extractStops(await getJson("RouteDetails/Get/" + live.route.id));
+    fillSelect($("stop"), live.stops.map((s) => [s.id + ":" + s.dir, s.name + " → " + s.toward]), live.stopKey);
+    if ($("stop").value !== live.stopKey) setStop($("stop").value);   // saved stop isn't on this route
   } catch (e) {
     $("stop").innerHTML = "<option>Couldn't load stops (" + e.message + ")</option>";
   }
 }
 
+function setStop(key) {
+  live.stopKey = key;
+  live.deps = []; live.fetched = 0; live.error = "";   // old stop's data no longer applies
+  live.lastTry = 0;                                     // fetch the new stop right away
+  render();
+}
+
 async function fetchDepartures() {
+  if (!live.stopKey) return;
   const [id, dir] = live.stopKey.split(":");
   const key = live.stopKey;
   try {
     const json = await getJson("StopDepartures/Get/" + id);
-    if (key !== live.stopKey) return;   // stop changed meanwhile
+    if (key !== live.stopKey) return;   // stop or route changed meanwhile
     const now = Math.floor(Date.now() / 1000);
-    live.deps = P.extractDepartures(json, ROUTE_ID, dir, now, 8);
+    live.deps = P.extractDepartures(json, live.route.id, dir, now, 8);
     live.fetched = now;
     live.error = "";
   } catch (e) {
@@ -259,19 +291,25 @@ document.querySelectorAll("#screens button").forEach((b) => (b.onclick = () => {
   document.querySelectorAll("#screens button").forEach((x) => x.classList.toggle("on", x === b));
   render();
 }));
-$("stop").onchange = () => {
-  live.stopKey = $("stop").value;
-  live.deps = []; live.fetched = 0; live.error = "";   // old stop's data no longer applies
-  render();
+$("stop").onchange = () => setStop($("stop").value);
+$("route").onchange = () => {
+  const r = live.routes.find((x) => String(x.id) === $("route").value);
+  if (!r) return;
+  live.route = r;
+  live.stopKey = "";
+  setStop("");
+  $("stop").innerHTML = "<option>Loading stops…</option>";
+  loadStops();
 };
 for (const id of ["walk", "bri"]) $(id).addEventListener("input", () => { $(id + "V").textContent = $(id).value; render(); });
-for (const id of ["m1", "m2", "age", "clock", "hasStop"]) $(id).addEventListener("input", render);
+for (const id of ["m1", "m2", "age", "clock", "hasStop", "mRoute", "mColor"]) $(id).addEventListener("input", render);
 $("net").addEventListener("input", () => {
   if ($("net").value === "wifi") live.wifiDownAt = Date.now();   // the 10 s grace starts now
   render();
 });
 
 try { const t = localStorage.getItem("busclock-sim-tab"); if (t) document.querySelector(`.tabs [data-tab="${t}"]`)?.click(); } catch (e) {}
+loadRoutes();
 loadStops();
 tick();
 setInterval(tick, 500);   // the firmware redraws every 500 ms

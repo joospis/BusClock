@@ -10,9 +10,15 @@
 
 #define PANEL_W 64
 #define PANEL_H 32
+#define BADGE_H   11   // route badge: rows 0-10, above the divider on row 12
+#define BADGE_PAD  3   // badge color on each side of the route number
+#define BADGE_GAP  3   // space between the badge and the widest clock
+#define CLOCK_MAX_W 38 // "12:59" at double size
+#define BADGE_DARK 0x40 // badge colors whose brightest channel is below this can't show a cut-out
 
 // Colors (from the mockup). LEDs look brighter than a screen; tweak to taste.
 #define RGB565(r, g, b) (uint16_t)((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | ((b) >> 3))
+static inline uint16_t rgb565(uint32_t rgb) { return RGB565((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF); }
 static const uint16_t C_CLOCK    = RGB565(0xDD, 0xDD, 0xDD);
 static const uint16_t C_LABEL    = RGB565(0xDD, 0xDD, 0xDD);
 static const uint16_t C_LINE     = RGB565(0x33, 0x33, 0x33);
@@ -84,6 +90,8 @@ static inline uint16_t urgencyColor(long mins, int walk) {
 // What the main screen needs to know.
 struct MainInput {
   int hour, minute;       // local time, 24 h
+  const char* route;      // route badge text ("30"); null or "" for no badge
+  uint16_t routeColor;    // badge color
   time_t now;
   const time_t* dep;      // upcoming departures (>= now), ascending
   int n;                  // how many in dep
@@ -96,6 +104,7 @@ struct MainInput {
 // What the main screen shows (separate from drawing so it's easy to test).
 struct MainView {
   char clock[8];
+  char route[8]; uint16_t routeColor;   // top-left badge, route[0] == 0 for none
   char big[6];  const char* unit;  uint16_t bigColor;   // bottom left
   char next[6]; uint16_t nextColor; uint16_t chevColor; // bottom right
   bool fresh;
@@ -104,6 +113,8 @@ struct MainView {
 static inline MainView mainView(const MainInput& in) {
   MainView v;
   snprintf(v.clock, sizeof v.clock, "%d:%02d", in.hour % 12 ? in.hour % 12 : 12, in.minute);
+  snprintf(v.route, sizeof v.route, "%.4s", in.route ? in.route : "");   // up to 4 characters fit
+  v.routeColor = in.routeColor;
   v.fresh = in.fetched && in.now - in.fetched <= in.maxAge;
 
   if (!in.hasStop) {
@@ -136,9 +147,46 @@ static inline MainView mainView(const MainInput& in) {
   return v;
 }
 
+// Width of the route badge: the number plus BADGE_PAD on each side, and at
+// least as wide as it is tall. "30" -> 13 px, "G101" -> 21 px.
+static inline int badgeWidth(const char* route) {
+  int w = textWidth(route, 1) + 2 * BADGE_PAD;
+  return w < BADGE_H ? BADGE_H : w;
+}
+
+// The route number is cut out of the badge (unlit pixels), which reads bolder
+// than thin lit strokes. A badge too dark to show a hole (black, like X90)
+// gets the number drawn in the clock color instead.
+static inline uint16_t badgeTextColor(uint16_t bg) {
+  int r = ((bg >> 11) & 0x1F) << 3, g = ((bg >> 5) & 0x3F) << 2, b = (bg & 0x1F) << 3;
+  int brightest = r > g ? (r > b ? r : b) : (g > b ? g : b);
+  return brightest < BADGE_DARK ? C_CLOCK : 0;
+}
+
+// Route badge with its left edge at x: filled in the route's color, number cut out.
+static inline void drawBadge(Canvas& cv, int x0, const char* route, uint16_t bg) {
+  uint16_t fg = badgeTextColor(bg);
+  int w = badgeWidth(route);
+  for (int y = 0; y < BADGE_H; y++)
+    for (int x = 0; x < w; x++) px(cv, x0 + x, y, bg);
+  drawText(cv, x0 + (w - textWidth(route, 1)) / 2, (BADGE_H - 5) / 2, route, fg, 1);
+}
+
 static inline void drawMain(Canvas& cv, const MainView& v) {
   // Top section: rows 0-11, clock 10 px tall with 1 px above and below.
-  drawCentered(cv, 1, v.clock, C_CLOCK, 2);
+  // With a route badge, the layout is fixed by the widest clock: badge + gap +
+  // a CLOCK_MAX_W cell, centered, so the margin left of the badge equals the
+  // margin right of the cell and the badge never moves. The time is centered
+  // in its cell.
+  if (v.route[0]) {
+    int bw = badgeWidth(v.route);
+    int x0 = (PANEL_W - (bw + BADGE_GAP + CLOCK_MAX_W)) / 2;
+    int cell = x0 + bw + BADGE_GAP;
+    drawBadge(cv, x0, v.route, v.routeColor);
+    drawText(cv, cell + (CLOCK_MAX_W - textWidth(v.clock, 2)) / 2, 1, v.clock, C_CLOCK, 2);
+  } else {
+    drawCentered(cv, 1, v.clock, C_CLOCK, 2);
+  }
 
   // Dividers
   for (int x = 0; x < PANEL_W; x++) px(cv, x, 12, C_LINE);

@@ -62,6 +62,47 @@ test("chooseScreen matches logic.h", () => {
   assert.strictEqual(P.chooseScreen({ ...down, timeValid: false }), "wifiOffline");
 });
 
+test("hex colors and RGB565 match logic.h / display.h", () => {
+  assert.strictEqual(P.parseHexColor("FBB033"), 0xfbb033);
+  assert.strictEqual(P.parseHexColor("#00467e"), 0x00467e);
+  for (const bad of [null, "", "#", "FBB03", "FBB0333", "GBB033", "0xFBB0"]) assert.strictEqual(P.parseHexColor(bad), null);
+  assert.strictEqual(P.rgb565(0xfbb033), P.RGB565(0xfb, 0xb0, 0x33));
+  assert.strictEqual(P.rgb565(0xffffff), 0xffff);
+  assert.strictEqual(P.rgb565(0xff0000), 0xf800);
+  assert.strictEqual(P.badgeWidth("30"), 13);
+  assert.strictEqual(P.badgeWidth("G101"), 21);
+});
+
+test("every real route name fits the badge", () => {
+  const routes = fixture("visible_routes.json");
+  assert.ok(routes.length > 40);
+  for (const r of routes) {
+    assert.ok(r.ShortName.length >= 1 && r.ShortName.length <= 4, r.ShortName);
+    assert.notStrictEqual(P.parseHexColor(r.Color), null, r.ShortName + " color " + r.Color);
+    const bg = P.rgb565(P.parseHexColor(r.Color));
+    const black = /^0+$/.test(r.Color);
+    assert.strictEqual(P.badgeTextColor(bg), black ? P.C.CLOCK : 0, r.ShortName + " " + r.Color);   // cut out unless black
+  }
+  const r30 = routes.find((r) => r.RouteId === 30030);
+  assert.deepStrictEqual([r30.ShortName, r30.Color], ["30", "FBB033"]);
+});
+
+test("other direction codes (E/W routes, campus shuttles)", () => {
+  const b43 = fixture("route_details_10043.json");
+  const stops = P.extractStops(b43);
+  assert.ok(stops.length > 40);
+  assert.deepStrictEqual([...new Set(stops.map((s) => s.dir))].sort(), ["E", "W"]);
+  const blank = { Stops: [{ StopId: 1, Name: "A" }, { StopId: 2, Name: "B" }, { StopId: 3, Name: "C" }],
+    RouteStops: [{ Direction: "UP", StopId: 1, SortOrder: 1 }, { Direction: "UP", StopId: 2, SortOrder: 2 },
+      { Direction: "", StopId: 3, SortOrder: 3 }] };
+  assert.deepStrictEqual(P.extractStops(blank).map((s) => s.id + ":" + s.dir), ["1:UP"]);   // blank skipped
+  assert.ok(P.dirMatches("U", "UP") && P.dirMatches("E", "E"));
+  assert.ok(!P.dirMatches("UP", "U") && !P.dirMatches("CW", "CCW") && !P.dirMatches("", "S"));
+  const json = [{ RouteDirections: [{ RouteId: 30034, DirectionCode: "UP", Departures: [{ EDT: "/Date(900000-0500)/" }] }] }];
+  assert.deepStrictEqual(P.extractDepartures(json, 30034, "UP", 0, 8), [900]);
+  assert.deepStrictEqual(P.extractDepartures(json, 30034, "DWN", 0, 8), []);
+});
+
 test("isNight matches the firmware", () => {
   assert.ok(P.isNight(0, 23, 7));
   assert.ok(!P.isNight(7, 23, 7));

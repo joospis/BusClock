@@ -11,7 +11,9 @@ for (const s of scenarios) {
   const screen = s.screen || "main";
   if (screen === "main") {
     const fetched = s.fetchedAgo == null ? 0 : now - s.fetchedAgo;
-    const v = P.mainView({ hour: s.hour || 0, minute: s.minute || 0, now, dep: s.deps.map((d) => now + d),
+    const v = P.mainView({ hour: s.hour || 0, minute: s.minute || 0, route: s.route || "",
+      routeColor: P.rgb565(P.parseHexColor(s.routeColor || "000000") || 0),
+      now, dep: s.deps.map((d) => now + d),
       fetched, hasStop: s.hasStop !== false, walk: s.walk ?? 4, maxAge: 180 });
     P.drawMain(fr, v);
   } else if (screen === "setup") {

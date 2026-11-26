@@ -8,15 +8,16 @@
 //   EDT = estimated departure time (live), SDT = scheduled. The number inside
 //   /Date(...)/ is milliseconds since 1970 UTC; the -0500 suffix is just the zone.
 //
-// Stops: https://bustracker.pvta.com/InfoPoint/rest/RouteDetails/Get/<routeId>
-//   { "ShortName": "30", "Stops": [ { "StopId": 34, "Name": "Puffton Village Apts" }, ... ],
-//     "RouteStops": [ { "Direction": "S", "StopId": 34, "SortOrder": 1 }, ... ] }
+// Route: https://bustracker.pvta.com/InfoPoint/rest/RouteDetails/Get/<routeId>
+//   { "ShortName": "30", "Color": "FBB033", "Stops": [...], ... }
+// (The setup page loads route and stop lists itself, straight from the browser.)
 #pragma once
 #include <ArduinoJson.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include "logic.h"
 
 // ------------------------------------------------------------------ departures
 // Keep only the fields we use, so the ~10 KB response parses into a small document.
@@ -39,16 +40,16 @@ static inline time_t live_parseDate(const char* s) {
   return ms > 0 ? (time_t)(ms / 1000) : 0;
 }
 
-// Pull the upcoming departures for one route direction ('N' or 'S') out of a
-// parsed response. Fills out[] sorted ascending; returns how many.
-static inline int live_extract(JsonDocument& doc, long routeId, char dirCode, time_t now,
+// Pull the upcoming departures for one route direction ("S", "E", "UP", ...) out
+// of a parsed response. Fills out[] sorted ascending; returns how many.
+static inline int live_extract(JsonDocument& doc, long routeId, const char* dir, time_t now,
                                time_t* out, int maxOut) {
   int n = 0;
   for (JsonObject stop : doc.as<JsonArray>()) {
     for (JsonObject rd : stop["RouteDirections"].as<JsonArray>()) {
       if (rd["RouteId"].as<long>() != routeId) continue;
       const char* dc = rd["DirectionCode"] | "";
-      if (dc[0] != dirCode) continue;
+      if (!dirMatches(dc, dir)) continue;
       for (JsonObject d : rd["Departures"].as<JsonArray>()) {
         if (d["IsCompleted"] | false) continue;
         if (d["IsLastStopOnTrip"] | false) continue;   // bus ends its run here
@@ -69,71 +70,30 @@ static inline int live_extract(JsonDocument& doc, long routeId, char dirCode, ti
   return n;
 }
 
-// ------------------------------------------------------------------ stops
-#define LIVE_NAME_LEN 41
+// ------------------------------------------------------------------ route
+// The badge shown next to the clock: PVTA's short name and colors for a route.
+#define LIVE_ROUTE_NAME_LEN 8
 
-struct LiveStop {
-  uint32_t id;
-  char dir;                  // 'N' or 'S'
-  uint16_t order;            // position along the route
-  char name[LIVE_NAME_LEN];
+struct LiveRoute {
+  char name[LIVE_ROUTE_NAME_LEN];  // "30", "B43", "G101"
+  char color[7];                   // badge color, hex without '#': "FBB033"
 };
 
-static inline void live_buildStopsFilter(JsonDocument& filter) {
-  filter["Stops"][0]["StopId"] = true;
-  filter["Stops"][0]["Name"] = true;
-  filter["RouteStops"][0]["Direction"] = true;
-  filter["RouteStops"][0]["StopId"] = true;
-  filter["RouteStops"][0]["SortOrder"] = true;
+static inline void live_buildRouteFilter(JsonDocument& filter) {
+  filter["ShortName"] = true;
+  filter["Color"] = true;
 }
 
-// Fill out[] with every stop/direction on the route, in route order. The last
-// stop of each direction is left out (buses end their trip there). Returns how many.
-static inline int live_extractStops(JsonDocument& doc, LiveStop* out, int maxOut) {
-  JsonArray stops = doc["Stops"].as<JsonArray>();
-  int n = 0;
-  for (JsonObject rs : doc["RouteStops"].as<JsonArray>()) {
-    if (n >= maxOut) break;
-    const char* d = rs["Direction"] | "";
-    if (d[0] != 'N' && d[0] != 'S') continue;
-    LiveStop s;
-    s.id = rs["StopId"].as<uint32_t>();
-    s.dir = d[0];
-    s.order = rs["SortOrder"].as<uint16_t>();
-    s.name[0] = 0;
-    for (JsonObject st : stops) {
-      if (st["StopId"].as<uint32_t>() != s.id) continue;
-      strncpy(s.name, st["Name"] | "", LIVE_NAME_LEN - 1);
-      s.name[LIVE_NAME_LEN - 1] = 0;
-      break;
-    }
-    if (!s.id || !s.name[0]) continue;
-    int j = n++;
-    while (j > 0 && out[j - 1].order > s.order) { out[j] = out[j - 1]; j--; }
-    out[j] = s;
-  }
-  // drop the final stop of each direction
-  for (char dir : {'N', 'S'}) {
-    int last = -1;
-    for (int i = 0; i < n; i++) if (out[i].dir == dir) last = i;
-    if (last < 0) continue;
-    for (int i = last; i < n - 1; i++) out[i] = out[i + 1];
-    n--;
-  }
-  return n;
+static inline void live_copy(char* dst, const char* src, size_t n) {
+  strncpy(dst, src ? src : "", n - 1);
+  dst[n - 1] = 0;
 }
 
-// Name of the last stop in a direction ("toward ..."), or "" if unknown.
-static inline const char* live_towardName(JsonDocument& doc, char dir) {
-  JsonArray stops = doc["Stops"].as<JsonArray>();
-  uint32_t lastId = 0;
-  uint16_t best = 0;
-  for (JsonObject rs : doc["RouteStops"].as<JsonArray>()) {
-    const char* d = rs["Direction"] | "";
-    uint16_t o = rs["SortOrder"].as<uint16_t>();
-    if (d[0] == dir && o >= best) { best = o; lastId = rs["StopId"].as<uint32_t>(); }
-  }
-  for (JsonObject st : stops)
-    if (st["StopId"].as<uint32_t>() == lastId) return st["Name"] | "";
-  return "";
+// Read a RouteDetails/Get/<routeId> response. False if it has no short name.
+static inline bool live_extractRoute(JsonDocument& doc, LiveRoute* out) {
+  const char* name = doc["ShortName"] | "";
+  if (!name[0]) return false;
+  live_copy(out->name, name, sizeof out->name);
+  live_copy(out->color, doc["Color"] | "", sizeof out->color);
+  return true;
 }

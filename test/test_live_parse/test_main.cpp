@@ -29,7 +29,7 @@ static std::string response(const std::string& dirs) {
   return "[{\"LastUpdated\":\"\\/Date(1795641768127-0500)\\/\",\"RouteDirections\":[" + dirs + "],\"StopId\":34}]";
 }
 
-static int parseDeps(const std::string& json, long route, char dir, time_t now, time_t* out, int maxOut) {
+static int parseDeps(const std::string& json, long route, const char* dir, time_t now, time_t* out, int maxOut) {
   JsonDocument filter, doc;
   live_buildFilter(filter);
   DeserializationError err = deserializeJson(doc, json, DeserializationOption::Filter(filter));
@@ -60,13 +60,13 @@ void test_extract_sorted_and_filtered_by_route_and_direction() {
       routeDir(30030, "S", dep(NOW + 900) + "," + dep(NOW + 300) + "," + dep(NOW + 600)) + "," +
       routeDir(30031, "S", dep(NOW + 120)));
   time_t out[8];
-  int n = parseDeps(json, 30030, 'S', NOW, out, 8);
+  int n = parseDeps(json, 30030, "S", NOW, out, 8);
   TEST_ASSERT_EQUAL_INT(3, n);
   TEST_ASSERT_EQUAL_INT64(NOW + 300, out[0]);
   TEST_ASSERT_EQUAL_INT64(NOW + 600, out[1]);
   TEST_ASSERT_EQUAL_INT64(NOW + 900, out[2]);
 
-  n = parseDeps(json, 30030, 'N', NOW, out, 8);
+  n = parseDeps(json, 30030, "N", NOW, out, 8);
   TEST_ASSERT_EQUAL_INT(1, n);
   TEST_ASSERT_EQUAL_INT64(NOW + 60, out[0]);
 }
@@ -79,7 +79,7 @@ void test_extract_skips_completed_last_stop_and_past() {
       dep(NOW) + "," +                      // leaving right now counts
       dep(NOW + 400)));
   time_t out[8];
-  int n = parseDeps(json, 30030, 'S', NOW, out, 8);
+  int n = parseDeps(json, 30030, "S", NOW, out, 8);
   TEST_ASSERT_EQUAL_INT(2, n);
   TEST_ASSERT_EQUAL_INT64(NOW, out[0]);
   TEST_ASSERT_EQUAL_INT64(NOW + 400, out[1]);
@@ -88,14 +88,14 @@ void test_extract_skips_completed_last_stop_and_past() {
 void test_extract_removes_duplicates() {
   std::string json = response(routeDir(30030, "S", dep(NOW + 300) + "," + dep(NOW + 300) + "," + dep(NOW + 600)));
   time_t out[8];
-  TEST_ASSERT_EQUAL_INT(2, parseDeps(json, 30030, 'S', NOW, out, 8));
+  TEST_ASSERT_EQUAL_INT(2, parseDeps(json, 30030, "S", NOW, out, 8));
 }
 
 void test_extract_keeps_earliest_when_full() {
   std::string json = response(routeDir(30030, "S",
       dep(NOW + 500) + "," + dep(NOW + 400) + "," + dep(NOW + 300) + "," + dep(NOW + 200) + "," + dep(NOW + 100)));
   time_t out[2];
-  int n = parseDeps(json, 30030, 'S', NOW, out, 2);
+  int n = parseDeps(json, 30030, "S", NOW, out, 2);
   TEST_ASSERT_EQUAL_INT(2, n);
   TEST_ASSERT_EQUAL_INT64(NOW + 100, out[0]);
   TEST_ASSERT_EQUAL_INT64(NOW + 200, out[1]);
@@ -104,7 +104,7 @@ void test_extract_keeps_earliest_when_full() {
 void test_extract_uses_scheduled_time_without_estimate() {
   std::string json = response(routeDir(30030, "S", dep(-1, false, false, NOW + 700)));
   time_t out[4];
-  int n = parseDeps(json, 30030, 'S', NOW, out, 4);
+  int n = parseDeps(json, 30030, "S", NOW, out, 4);
   TEST_ASSERT_EQUAL_INT(1, n);
   TEST_ASSERT_EQUAL_INT64(NOW + 700, out[0]);
 }
@@ -112,91 +112,71 @@ void test_extract_uses_scheduled_time_without_estimate() {
 void test_extract_prefers_estimate_over_schedule() {
   std::string json = response(routeDir(30030, "S", dep(NOW + 900, false, false, NOW + 600)));  // running late
   time_t out[4];
-  TEST_ASSERT_EQUAL_INT(1, parseDeps(json, 30030, 'S', NOW, out, 4));
+  TEST_ASSERT_EQUAL_INT(1, parseDeps(json, 30030, "S", NOW, out, 4));
   TEST_ASSERT_EQUAL_INT64(NOW + 900, out[0]);
 }
 
 void test_extract_empty_and_odd_responses() {
   time_t out[4];
-  TEST_ASSERT_EQUAL_INT(0, parseDeps("[]", 30030, 'S', NOW, out, 4));
-  TEST_ASSERT_EQUAL_INT(0, parseDeps(response(routeDir(30030, "S", "")), 30030, 'S', NOW, out, 4));
-  TEST_ASSERT_EQUAL_INT(0, parseDeps("[{\"RouteDirections\":null}]", 30030, 'S', NOW, out, 4));
+  TEST_ASSERT_EQUAL_INT(0, parseDeps("[]", 30030, "S", NOW, out, 4));
+  TEST_ASSERT_EQUAL_INT(0, parseDeps(response(routeDir(30030, "S", "")), 30030, "S", NOW, out, 4));
+  TEST_ASSERT_EQUAL_INT(0, parseDeps("[{\"RouteDirections\":null}]", 30030, "S", NOW, out, 4));
 }
 
-// ------------------------------------------------------------------ stops
+void test_extract_other_direction_codes() {
+  std::string json = response(
+      routeDir(10043, "E", dep(NOW + 120)) + "," + routeDir(10043, "W", dep(NOW + 240)) + "," +
+      routeDir(30034, "UP", dep(NOW + 360)) + "," + routeDir(30035, "U", dep(NOW + 480)));
+  time_t out[4];
+  TEST_ASSERT_EQUAL_INT(1, parseDeps(json, 10043, "E", NOW, out, 4));
+  TEST_ASSERT_EQUAL_INT64(NOW + 120, out[0]);
+  TEST_ASSERT_EQUAL_INT(1, parseDeps(json, 10043, "W", NOW, out, 4));
+  TEST_ASSERT_EQUAL_INT64(NOW + 240, out[0]);
+  TEST_ASSERT_EQUAL_INT(1, parseDeps(json, 30034, "UP", NOW, out, 4));
+  TEST_ASSERT_EQUAL_INT(1, parseDeps(json, 30035, "UP", NOW, out, 4));   // "U" stands for "UP"
+  TEST_ASSERT_EQUAL_INT(0, parseDeps(json, 30034, "DWN", NOW, out, 4));
+}
+
+// ------------------------------------------------------------------ route
 // Shaped like RouteDetails/Get/30030, trimmed, with extra fields the filter should drop.
 static const char* ROUTE_JSON = R"({
-  "Color":"FBB033","ShortName":"30","Messages":[{"Message":"ignored"}],"Vehicles":[{"VehicleId":1}],
-  "Stops":[
-    {"Description":"x","StopId":34,"Name":"Puffton Village Apts","Latitude":42.4},
-    {"StopId":35,"Name":"Puffton Village / North Pleasant Street"},
-    {"StopId":148,"Name":"Old Belchertown Road"},
-    {"StopId":8002,"Name":"Amherst Dog Park"},
-    {"StopId":999,"Name":""}
-  ],
-  "RouteStops":[
-    {"Direction":"N","RouteId":30030,"SortOrder":22,"StopId":148},
-    {"Direction":"S","RouteId":30030,"SortOrder":1,"StopId":34},
-    {"Direction":"S","RouteId":30030,"SortOrder":3,"StopId":148},
-    {"Direction":"N","RouteId":30030,"SortOrder":41,"StopId":34},
-    {"Direction":"S","RouteId":30030,"SortOrder":2,"StopId":35},
-    {"Direction":"N","RouteId":30030,"SortOrder":23,"StopId":8002},
-    {"Direction":"N","RouteId":30030,"SortOrder":24,"StopId":999},
-    {"Direction":"X","RouteId":30030,"SortOrder":5,"StopId":35}
-  ]
+  "Color":"FBB033","TextColor":"000000","ShortName":"30","LongName":"North Amherst / Old Belchertown Rd",
+  "Messages":[{"Message":"ignored"}],"Vehicles":[{"VehicleId":1}],
+  "Stops":[{"StopId":34,"Name":"Puffton Village Apts"}],
+  "RouteStops":[{"Direction":"S","RouteId":30030,"SortOrder":1,"StopId":34}]
 })";
 
-static void parseRoute(JsonDocument& doc) {
-  JsonDocument filter;
-  live_buildStopsFilter(filter);
-  DeserializationError err = deserializeJson(doc, ROUTE_JSON, DeserializationOption::Filter(filter));
+static bool parseRoute(const char* json, LiveRoute* r) {
+  JsonDocument filter, doc;
+  live_buildRouteFilter(filter);
+  DeserializationError err = deserializeJson(doc, json, DeserializationOption::Filter(filter));
   TEST_ASSERT_FALSE_MESSAGE(err, err.c_str());
+  return live_extractRoute(doc, r);
 }
 
-void test_stops_in_route_order_without_final_stops() {
-  JsonDocument doc;
-  parseRoute(doc);
-  LiveStop s[16];
-  int n = live_extractStops(doc, s, 16);
-  // S: 34(1) 35(2) [148(3) last, dropped]   N: 148(22) 8002(23) [34(41) last, dropped]
-  // 999 has no name and "X" isn't a direction, so both are skipped.
-  TEST_ASSERT_EQUAL_INT(4, n);
-  TEST_ASSERT_EQUAL_UINT32(34, s[0].id);   TEST_ASSERT_EQUAL_CHAR('S', s[0].dir);
-  TEST_ASSERT_EQUAL_STRING("Puffton Village Apts", s[0].name);
-  TEST_ASSERT_EQUAL_UINT32(35, s[1].id);   TEST_ASSERT_EQUAL_CHAR('S', s[1].dir);
-  TEST_ASSERT_EQUAL_UINT32(148, s[2].id);  TEST_ASSERT_EQUAL_CHAR('N', s[2].dir);
-  TEST_ASSERT_EQUAL_UINT32(8002, s[3].id); TEST_ASSERT_EQUAL_CHAR('N', s[3].dir);
-  TEST_ASSERT_EQUAL_STRING("Amherst Dog Park", s[3].name);
+void test_route_badge_fields() {
+  LiveRoute r;
+  TEST_ASSERT_TRUE(parseRoute(ROUTE_JSON, &r));
+  TEST_ASSERT_EQUAL_STRING("30", r.name);
+  TEST_ASSERT_EQUAL_STRING("FBB033", r.color);
 }
 
-void test_stops_respects_max() {
-  JsonDocument doc;
-  parseRoute(doc);
-  LiveStop s[2];
-  int n = live_extractStops(doc, s, 2);
-  TEST_ASSERT_TRUE(n <= 2);
+void test_route_filter_keeps_document_small() {
+  JsonDocument filter, doc;
+  live_buildRouteFilter(filter);
+  deserializeJson(doc, ROUTE_JSON, DeserializationOption::Filter(filter));
+  TEST_ASSERT_EQUAL_size_t(2, doc.as<JsonObject>().size());   // only ShortName and Color
 }
 
-void test_stops_long_names_are_truncated() {
-  std::string longName(80, 'A');
-  std::string json = "{\"Stops\":[{\"StopId\":1,\"Name\":\"" + longName + "\"},{\"StopId\":2,\"Name\":\"End\"}],"
-                     "\"RouteStops\":[{\"Direction\":\"S\",\"SortOrder\":1,\"StopId\":1},"
-                     "{\"Direction\":\"S\",\"SortOrder\":2,\"StopId\":2}]}";
-  JsonDocument doc;
-  deserializeJson(doc, json);
-  LiveStop s[4];
-  TEST_ASSERT_EQUAL_INT(1, live_extractStops(doc, s, 4));
-  TEST_ASSERT_EQUAL_size_t(LIVE_NAME_LEN - 1, strlen(s[0].name));
-}
-
-void test_toward_names() {
-  JsonDocument doc;
-  parseRoute(doc);
-  TEST_ASSERT_EQUAL_STRING("Old Belchertown Road", live_towardName(doc, 'S'));
-  TEST_ASSERT_EQUAL_STRING("Puffton Village Apts", live_towardName(doc, 'N'));
-  JsonDocument empty;
-  deserializeJson(empty, "{}");
-  TEST_ASSERT_EQUAL_STRING("", live_towardName(empty, 'S'));
+void test_route_missing_or_long_fields() {
+  LiveRoute r;
+  TEST_ASSERT_FALSE(parseRoute("{}", &r));
+  TEST_ASSERT_FALSE(parseRoute(R"({"ShortName":"","Color":"FF0000"})", &r));
+  TEST_ASSERT_TRUE(parseRoute(R"({"ShortName":"R41"})", &r));      // colors optional
+  TEST_ASSERT_EQUAL_STRING("", r.color);
+  TEST_ASSERT_TRUE(parseRoute(R"({"ShortName":"VERYLONGNAME","Color":"FF0000FF"})", &r));
+  TEST_ASSERT_EQUAL_STRING("VERYLON", r.name);                       // truncated to fit
+  TEST_ASSERT_EQUAL_STRING("FF0000", r.color);
 }
 
 int main() {
@@ -210,9 +190,9 @@ int main() {
   RUN_TEST(test_extract_uses_scheduled_time_without_estimate);
   RUN_TEST(test_extract_prefers_estimate_over_schedule);
   RUN_TEST(test_extract_empty_and_odd_responses);
-  RUN_TEST(test_stops_in_route_order_without_final_stops);
-  RUN_TEST(test_stops_respects_max);
-  RUN_TEST(test_stops_long_names_are_truncated);
-  RUN_TEST(test_toward_names);
+  RUN_TEST(test_extract_other_direction_codes);
+  RUN_TEST(test_route_badge_fields);
+  RUN_TEST(test_route_filter_keeps_document_small);
+  RUN_TEST(test_route_missing_or_long_fields);
   return UNITY_END();
 }

@@ -4,10 +4,18 @@
 // Works as a plain <script> (window.BusPanel) and as a Node module.
 (function (root) {
   "use strict";
-  const PANEL_W = 64, PANEL_H = 32;
+  const PANEL_W = 64, PANEL_H = 32, BADGE_H = 11, BADGE_PAD = 3, BADGE_GAP = 3, CLOCK_MAX_W = 38, BADGE_DARK = 0x40;
   const idiv = (a, b) => Math.trunc(a / b);   // C integer division
 
   const RGB565 = (r, g, b) => (((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)) & 0xFFFF;
+  const rgb565 = (rgb) => RGB565((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+
+  // "FBB033" or "#fbb033" -> 0xFBB033, or null unless exactly 6 hex digits (logic.h parseHexColor)
+  function parseHexColor(s) {
+    if (typeof s !== "string") return null;
+    if (s[0] === "#") s = s.slice(1);
+    return /^[0-9a-fA-F]{6}$/.test(s) ? parseInt(s, 16) : null;
+  }
   const C = {
     CLOCK: RGB565(0xDD, 0xDD, 0xDD),
     LABEL: RGB565(0xDD, 0xDD, 0xDD),
@@ -77,11 +85,14 @@
     return C.GREEN;
   }
 
-  // in: {hour, minute, now, dep: [epoch s...], fetched (0 = never), hasStop, walk, maxAge}
+  // in: {hour, minute, route, routeColor, now, dep: [epoch s...], fetched (0 = never), hasStop, walk, maxAge}
+  // route is the badge text ("" for none); routeColor is RGB565.
   function mainView(inp) {
     const v = {};
     const h12 = inp.hour % 12 ? inp.hour % 12 : 12;
     v.clock = h12 + ":" + String(inp.minute).padStart(2, "0");
+    v.route = (inp.route || "").slice(0, 4);
+    v.routeColor = inp.routeColor || 0;
     v.fresh = !!inp.fetched && inp.now - inp.fetched <= inp.maxAge;
     const n = inp.dep.length;
 
@@ -106,8 +117,33 @@
     return v;
   }
 
+  function badgeWidth(route) {
+    return Math.max(BADGE_H, textWidth(route, 1) + 2 * BADGE_PAD);
+  }
+
+  function badgeTextColor(bg) {
+    const r = ((bg >> 11) & 0x1f) << 3, g = ((bg >> 5) & 0x3f) << 2, b = (bg & 0x1f) << 3;
+    return Math.max(r, g, b) < BADGE_DARK ? C.CLOCK : 0;
+  }
+
+  function drawBadge(cv, x0, route, bg) {
+    const fg = badgeTextColor(bg);
+    const w = badgeWidth(route);
+    for (let y = 0; y < BADGE_H; y++)
+      for (let x = 0; x < w; x++) px(cv, x0 + x, y, bg);
+    drawText(cv, x0 + idiv(w - textWidth(route, 1), 2), idiv(BADGE_H - 5, 2), route, fg, 1);
+  }
+
   function drawMain(cv, v) {
-    drawCentered(cv, 1, v.clock, C.CLOCK, 2);
+    if (v.route) {
+      const bw = badgeWidth(v.route);
+      const x0 = idiv(PANEL_W - (bw + BADGE_GAP + CLOCK_MAX_W), 2);
+      drawBadge(cv, x0, v.route, v.routeColor);
+      const cell = x0 + bw + BADGE_GAP;
+      drawText(cv, cell + idiv(CLOCK_MAX_W - textWidth(v.clock, 2), 2), 1, v.clock, C.CLOCK, 2);
+    } else {
+      drawCentered(cv, 1, v.clock, C.CLOCK, 2);
+    }
     for (let x = 0; x < PANEL_W; x++) px(cv, x, 12, C.LINE);
     for (let y = 13; y < PANEL_H; y++) px(cv, 44, y, C.LINE);
 
@@ -171,12 +207,18 @@
     return ms > 0 ? Math.floor(ms / 1000) : 0;
   }
 
+  // logic.h dirMatches: exact, or a one-letter code standing for a longer one ("U" for "UP")
+  function dirMatches(code, dir) {
+    if (!code || !dir) return false;
+    return code === dir || (code.length === 1 && code === dir[0]);
+  }
+
   // StopDepartures response -> sorted upcoming departure times (epoch s)
   function extractDepartures(json, routeId, dir, now, maxOut) {
     const out = [];
     for (const stop of json || [])
       for (const rd of (stop && stop.RouteDirections) || []) {
-        if (rd.RouteId !== routeId || !(rd.DirectionCode || "").startsWith(dir)) continue;
+        if (rd.RouteId !== routeId || !dirMatches(rd.DirectionCode || "", dir)) continue;
         for (const d of rd.Departures || []) {
           if (d.IsCompleted || d.IsLastStopOnTrip) continue;
           const t = parseDate(d.EDT) || parseDate(d.SDT);
@@ -192,7 +234,7 @@
   function extractStops(json) {
     const names = new Map((json.Stops || []).map((s) => [s.StopId, s.Name || ""]));
     const rs = (json.RouteStops || [])
-      .filter((r) => r.Direction === "N" || r.Direction === "S")
+      .filter((r) => /^[A-Z]{1,4}$/.test(r.Direction || ""))
       .sort((a, b) => a.SortOrder - b.SortOrder);
     const toward = {};
     for (const r of rs) toward[r.Direction] = names.get(r.StopId) || "";
@@ -210,7 +252,7 @@
   }
 
   const api = {
-    PANEL_W, PANEL_H, C, Frame, textWidth, drawText, drawCentered, urgencyColor, mainView,
+    PANEL_W, PANEL_H, C, Frame, dirMatches, RGB565, rgb565, parseHexColor, badgeWidth, badgeTextColor, textWidth, drawText, drawCentered, urgencyColor, mainView,
     drawMain, drawSetupScreen, drawMessage, fitScale, isNight, chooseScreen, parseDate, extractDepartures, extractStops, toRGB,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
